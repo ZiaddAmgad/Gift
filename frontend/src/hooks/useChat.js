@@ -26,11 +26,9 @@ export const useChat = () => {
   const sendMessage = useCallback(async (text) => {
     if (!text || !text.trim()) return;
 
-    // Add User Message to UI immediately
     setMessages(prev => [...prev, { type: 'user', text }]);
     setLoading(true);
 
-    // Safety check for session ID
     let currentSessionId = sessionId;
     if (!currentSessionId) {
       currentSessionId = localStorage.getItem('chat_session_id') || uuidv4();
@@ -38,7 +36,11 @@ export const useChat = () => {
     }
 
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/chat', {
+      // --- CRITICAL FIX HERE ---
+      // Uses the Vercel Environment Variable if available, otherwise Localhost
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+      
+      const response = await fetch(`${API_BASE}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -49,12 +51,10 @@ export const useChat = () => {
 
       const data = await response.json();
 
-      // Add Bot Text Reply
       if (data.message) {
         setMessages(prev => [...prev, { type: 'bot', text: data.message }]);
       }
 
-      // Add Product Cards (if any)
       if (data.products && data.products.length > 0) {
         setMessages(prev => [...prev, { type: 'products', items: data.products }]);
       }
