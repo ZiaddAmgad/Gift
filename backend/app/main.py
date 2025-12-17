@@ -5,10 +5,16 @@ from app.api import chat
 
 app = FastAPI()
 
-# Configure CORS to allow localhost:3000
+# Configure CORS to allow Localhost AND your Live Vercel Frontend
+origins = [
+    "http://localhost:3000",                      # Local Development
+    "https://gift-frontend-zeta.vercel.app",      # Your Live Frontend
+    "https://gift-frontend-zeta.vercel.app/"      # (Safe measure: sometimes browsers add a slash)
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
