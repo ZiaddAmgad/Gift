@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+python-multipart
+pandas
+python-dotenv
+requests
+google-generativeai
+pinecone>=5.0.0
+Pillow
