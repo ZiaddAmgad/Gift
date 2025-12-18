@@ -2,3 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 
+   CRITICAL: Make the root elements transparent.
+   This ensures only the Button/ChatWindow are visible, 
+   not the empty space around them.
+*/
+html, body {
+  background-color: transparent !important;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Hides those ugly scrollbars */
+  height: 100%;
+  width: 100%;
+}
+
+/* Ensure the Next.js root div takes up space but stays transparent */
+#__next {
+  height: 100%;
+  width: 100%;
+  background-color: transparent !important;
+}
