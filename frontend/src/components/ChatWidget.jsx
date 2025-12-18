@@ -14,19 +14,14 @@ const ChatWidget = () => {
   return (
     <div className="flex flex-col h-full w-full relative">
       
-      {/* 
-          CHAT AREA: 
-          Using conditional rendering again. 
-          When closed, this DIV disappears completely.
-          Memory is handled by useChat's localStorage logic.
-      */}
       {isOpen && (
-        <div className="absolute bottom-20 right-0 w-full h-[650px] pr-4 pb-2 box-border">
+        // CHANGE HERE: Changed 'h-[650px]' to 'h-[calc(100%-90px)]'
+        // This calculates: 100% of iframe height minus 90px for the button area.
+        <div className="absolute bottom-20 right-0 w-full h-[calc(100%-90px)] pr-4 pb-2 box-border">
           <ChatWindow isOpen={isOpen} onClose={() => setIsOpen(false)} />
         </div>
       )}
 
-      {/* BUTTON AREA */}
       <div className="absolute bottom-4 right-4 shrink-0">
         <button
           onClick={() => setIsOpen(!isOpen)}

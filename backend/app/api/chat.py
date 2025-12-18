@@ -53,7 +53,17 @@ def _get_gemini_chat_model():
     if not GOOGLE_API_KEY:
         raise RuntimeError("GOOGLE_API_KEY must be set in the environment.")
     genai.configure(api_key=GOOGLE_API_KEY)
-    return genai.GenerativeModel("models/gemini-2.5-flash")
+    
+    # ADD CONFIGURATION
+    generation_config = genai.types.GenerationConfig(
+        max_output_tokens=300, # Increased to 300 (Safe for chatty replies)
+        temperature=0.7
+    )
+    
+    return genai.GenerativeModel(
+        "models/gemini-2.5-flash", 
+        generation_config=generation_config
+    )
 
 def get_session(session_id: str) -> Dict[str, Any]:
     if session_id not in SESSIONS:
