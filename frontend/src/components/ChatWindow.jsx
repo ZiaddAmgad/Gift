@@ -7,7 +7,6 @@ const ChatWindow = ({ isOpen, onClose }) => {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
@@ -22,17 +21,19 @@ const ChatWindow = ({ isOpen, onClose }) => {
   };
 
   return (
-    <div className="fixed bottom-24 right-6 w-96 h-[600px] bg-white rounded-xl shadow-2xl flex flex-col z-50 border border-gray-200 overflow-hidden font-sans">
+    // CHANGE: Removed 'fixed bottom-xx right-xx w-96'. 
+    // Now it takes full width/height of the container provided by ChatWidget.
+    <div className="w-full h-full bg-white rounded-xl shadow-xl flex flex-col border border-gray-200 overflow-hidden font-sans">
       
       {/* Header */}
-      <div className="bg-blue-600 p-4 flex justify-between items-center text-white shadow-md">
+      <div className="bg-black p-4 flex justify-between items-center text-white shadow-md shrink-0">
         <div>
-          <h3 className="font-bold text-lg">AI Gift Concierge</h3>
-          <p className="text-xs text-blue-100 opacity-90">Ask me about jewelry recommendations</p>
+          <h3 className="font-bold text-lg">Fortuna AI</h3>
+          <p className="text-xs text-gray-300 opacity-90">Gift Concierge</p>
         </div>
         <button 
           onClick={onClose} 
-          className="hover:bg-blue-700 p-1 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+          className="hover:bg-gray-800 p-1 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
         >
           ✕
         </button>
@@ -44,17 +45,15 @@ const ChatWindow = ({ isOpen, onClose }) => {
           <div key={idx} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
             
             {msg.type === 'products' ? (
-              // RENDER PRODUCT CARDS
-              <div className="w-full max-w-[90%]">
+              <div className="w-full max-w-[95%]">
                 {msg.items.map((product) => (
                   <ProductCard key={product.id} product={product} />
                 ))}
               </div>
             ) : (
-              // RENDER TEXT BUBBLES
               <div className={`max-w-[85%] px-4 py-3 text-sm shadow-sm ${
                 msg.type === 'user' 
-                  ? 'bg-blue-600 text-white rounded-2xl rounded-br-none' 
+                  ? 'bg-black text-white rounded-2xl rounded-br-none' 
                   : 'bg-white border border-gray-100 text-gray-800 rounded-2xl rounded-bl-none'
               }`}>
                 {msg.text}
@@ -64,7 +63,6 @@ const ChatWindow = ({ isOpen, onClose }) => {
           </div>
         ))}
         
-        {/* Loading Indicator */}
         {loading && (
           <div className="flex justify-start">
             <div className="bg-white border border-gray-100 px-4 py-3 rounded-2xl rounded-bl-none shadow-sm flex items-center space-x-1">
@@ -78,19 +76,19 @@ const ChatWindow = ({ isOpen, onClose }) => {
       </div>
 
       {/* Input Area */}
-      <form onSubmit={handleSubmit} className="p-4 bg-white border-t border-gray-100 flex gap-2 shadow-sm">
+      <form onSubmit={handleSubmit} className="p-4 bg-white border-t border-gray-100 flex gap-2 shadow-sm shrink-0">
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Type your message..."
-          className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+          placeholder="Describe her style..."
+          className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
           disabled={loading}
         />
         <button 
           type="submit" 
           disabled={loading || !input.trim()}
-          className="bg-blue-600 text-white px-5 py-2 rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-sm shadow-sm"
+          className="bg-black text-white px-5 py-2 rounded-full hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-sm shadow-sm"
         >
           Send
         </button>
