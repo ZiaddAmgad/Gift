@@ -19,7 +19,7 @@ class ChatMessage(BaseModel):
 # --- IN-MEMORY SESSION STORE ---
 SESSIONS: Dict[str, Dict[str, Any]] = {}
 
-# --- HELPER: BUDGET PARSER ---
+# --- HELPER: SMART BUDGET PARSER ---
 def parse_budget_logic(text: str) -> Dict[str, Any]:
     """
     Analyzes budget text for amount AND intent (Over vs Under vs Approx).
@@ -34,30 +34,39 @@ def parse_budget_logic(text: str) -> Dict[str, Any]:
     # Get the primary number
     amount = float(max(numbers, key=lambda x: float(x)))
     
-    # Detect intent - check for minimum keywords first
+    # Detect intent
     if any(w in clean_text for w in ["over", "above", "more than", "start", "min"]):
         return {'amount': amount, 'type': 'min'}
     
-    # Check for maximum keywords
     if any(w in clean_text for w in ["under", "below", "less than"]):
         return {'amount': amount, 'type': 'max'}
     
-    # Check for approximate keywords
-    if any(w in clean_text for w in ["about", "around", "approx", "close to"]):
-        return {'amount': amount, 'type': 'approx'}
-    
-    # If a number exists but no keywords, default to 'approx' (safer than max)
+    # Default to approx
     return {'amount': amount, 'type': 'approx'}
+
+# --- HELPER: ROBUST JSON CLEANER ---
+def clean_json_text(text: str) -> str:
+    """
+    Uses Regex to find the JSON object {...} inside the text,
+    ignoring any conversational garbage before or after.
+    """
+    text = text.strip()
+    # Find the first '{' and the last '}'
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match:
+        return match.group(0)
+    return text
 
 def _get_gemini_chat_model():
     if not GOOGLE_API_KEY:
         raise RuntimeError("GOOGLE_API_KEY must be set in the environment.")
     genai.configure(api_key=GOOGLE_API_KEY)
     
-    # ADD CONFIGURATION
+    # CRITICAL FIX: Force JSON response type
     generation_config = genai.types.GenerationConfig(
-        max_output_tokens=300, # Increased to 300 (Safe for chatty replies)
-        temperature=0.7
+        max_output_tokens=300,
+        temperature=0.7,
+        response_mime_type="application/json"
     )
     
     return genai.GenerativeModel(
@@ -73,7 +82,7 @@ def get_session(session_id: str) -> Dict[str, Any]:
                 "recipient": None,
                 "event_occasion": None,
                 "metal_preference": None,
-                "volume_vibe": None, # Now supports: Simple, Glamorous, Artistic, Classic
+                "volume_vibe": None,
                 "budget": None
             },
         }
@@ -84,18 +93,9 @@ def reset_session(session_id: str) -> Dict[str, Any]:
         del SESSIONS[session_id]
     return get_session(session_id)
 
-def clean_json_text(text: str) -> str:
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        lines = [l for l in lines if not l.strip().startswith("```")]
-        text = "\n".join(lines)
-    return text
-
-def extract_slots_and_reply(session: Dict[str, Any], user_message: str) -> Dict[str, Any]:
+async def extract_slots_and_reply(session: Dict[str, Any], user_message: str) -> Dict[str, Any]:
     info = session["info"]
     
-    # --- PROMPT WITH EXPANDED VIBE CHECK ---
     system_prompt = (
         "You are an AI Jewelry Concierge. Extract 5 slots based on the user's answers.\n"
         "Current Info: " + json.dumps(info) + "\n\n"
@@ -119,39 +119,40 @@ def extract_slots_and_reply(session: Dict[str, Any], user_message: str) -> Dict[
         "- 'Birthday', 'Bday' -> event_occasion: 'Birthday'\n"
         "- 'Holiday', 'Eid', 'Christmas', 'Easter' -> event_occasion: 'Holiday'\n"
         "- 'Just because', 'Gift' -> event_occasion: 'Just Because'\n"
-        
-        # METAL MAPPING (With I dont know fallback)
         "- 'Gold' -> metal_preference: 'Gold'\n"
         "- 'Silver', 'White', 'Platinum' -> metal_preference: 'Silver'\n"
-        "- 'Not sure', 'Idk', 'Mix', 'Both', 'No idea', 'I dont know', 'I don't know' -> metal_preference: 'Any'\n"
-        
-        # STYLE MAPPING (Expanded to cover Vision Attributes)
+        "- 'Not sure', 'Idk', 'Mix', 'Both', 'No idea' -> metal_preference: 'Any'\n"
         "- 'Simple', 'Clean', 'Modern', 'Minimalist' -> volume_vibe: 'Simple'\n"
         "- 'Bold', 'Glamorous', 'Sparkly', 'Statement', 'Party' -> volume_vibe: 'Glamorous'\n"
         "- 'Artistic', 'Nature', 'Boho', 'Flowers', 'Vintage' -> volume_vibe: 'Artistic'\n"
         "- 'Classic', 'Elegant', 'Traditional' -> volume_vibe: 'Classic'\n"
-        "- 'Not sure', 'Idk', 'Safe', 'Play it safe', 'I dont know', 'I don't know' -> volume_vibe: 'Safe_Fallback'\n\n"
+        "- 'Not sure', 'Idk', 'Safe', 'Play it safe', 'I dont know' -> volume_vibe: 'Safe_Fallback'\n\n"
 
         "OUTPUT FORMAT (JSON ONLY):\n"
         "{\n"
-        '  "recipient": "...",\n'
-        '  "event_occasion": "...",\n'
-        '  "metal_preference": "...",\n'
-        '  "volume_vibe": "...",\n'
-        '  "budget": "...",\n'
-        '  "reply": "..."\n'
+        '  "recipient": "string or null",\n'
+        '  "event_occasion": "string or null",\n'
+        '  "metal_preference": "string or null",\n'
+        '  "volume_vibe": "string or null",\n'
+        '  "budget": "string or null",\n'
+        '  "reply": "string"\n'
         "}"
     )
 
     model = _get_gemini_chat_model()
     
     try:
-        response = model.generate_content(system_prompt)
+        # We use async to avoid blocking
+        response = await model.generate_content_async(system_prompt)
         raw_text = response.text or ""
+        
+        # Clean the text before parsing
         cleaned_text = clean_json_text(raw_text)
         return json.loads(cleaned_text)
+        
     except Exception as e:
         print(f"ERROR GEMINI: {str(e)}")
+        # If parsing fails, just ask for recipient as fallback
         return {
             "reply": "I'm having a little trouble connecting. Could you tell me who the gift is for?",
             **info
@@ -174,7 +175,7 @@ async def chat_endpoint(chat_message: ChatMessage):
         }
 
     # Extraction
-    slot_result = extract_slots_and_reply(session, user_text)
+    slot_result = await extract_slots_and_reply(session, user_text)
 
     # Update Memory
     info = session["info"]
@@ -202,13 +203,10 @@ async def chat_endpoint(chat_message: ChatMessage):
         budget_amount = budget_info['amount']
         budget_type = budget_info['type']
         
-        # --- 2. BUILD QUERY (Mapping User input to Vision Tags) ---
-        query_parts = []
-        
-        # Recipient
-        query_parts.append(f"Recipient: {info['recipient']}")
+        # --- 2. BUILD QUERY ---
+        query_parts = [f"Recipient: {info['recipient']}"]
 
-        # Metal (Handle 'Any' -> Neutral Skin Tone / Mixed)
+        # Metal
         metal_pref = info['metal_preference']
         if metal_pref == 'Any':
             query_parts.append("Material: Gold, Silver, Rose Gold, Mixed. Skin Tone: Neutral")
@@ -217,7 +215,7 @@ async def chat_endpoint(chat_message: ChatMessage):
         elif metal_pref == 'Silver':
             query_parts.append("Material: Silver, Sterling Silver, White Gold. Skin Tone: Cool Tones")
         
-        # Occasion (Maps to Usage)
+        # Occasion
         occ = info['event_occasion']
         if occ == 'Anniversary':
             query_parts.append("Occasion: Party, Anniversary. Attributes: Romantic, Love, Eternity")
@@ -228,92 +226,64 @@ async def chat_endpoint(chat_message: ChatMessage):
         elif occ == 'Just Because':
             query_parts.append("Occasion: Daily, Gift. Attributes: Affordable, Casual")
             
-        # VIBE MAPPING (The Big Update to cover your Vision Attributes)
+        # Vibe
         vibe = info['volume_vibe']
-        
         if vibe == 'Simple':
-            # Covers: Minimalist, Modern, Geometric, Dainty, Industrial
-            query_parts.append("Style: Minimalist, Modern, Geometric, Dainty, Industrial. Gemstone: None")
-            
+            query_parts.append("Style: Minimalist, Modern, Geometric, Dainty. Gemstone: None")
         elif vibe == 'Glamorous':
-            # Covers: Bold, Statement, Art Deco, Trendy, Zircon
-            query_parts.append("Style: Bold, Statement, Art Deco, Trendy. Gemstone: Diamond, Zircon, Crystal")
-            
+            query_parts.append("Style: Bold, Statement, Art Deco, Trendy. Gemstone: Diamond, Zircon")
         elif vibe == 'Artistic':
-            # Covers: Boho, Nature, Vintage, Mixed
-            query_parts.append("Style: Boho, Nature, Vintage, Romantic. Material: Mixed, Beaded")
-            
+            query_parts.append("Style: Boho, Nature, Vintage, Romantic. Material: Mixed")
         elif vibe == 'Classic':
-            # Covers: Classic, Traditional, Pearl
             query_parts.append("Style: Classic, Traditional, Romantic. Gemstone: Pearl")
-            
         elif vibe == 'Safe_Fallback': 
-            # Covers: Classic, Minimalist (The safest options)
-            query_parts.append("Style: Classic, Minimalist, Dainty. Occasion: Daily, Gift")
+            query_parts.append("Style: Classic, Minimalist, Dainty. Occasion: Daily")
 
         final_query = ". ".join(query_parts)
         print(f"🔎 QUERY: {final_query} | Budget: {budget_info}")
 
         # --- 3. SEARCH & FILTER ---
-        # Perform Vector Search first to get candidates (increase match_count to 20)
         products = search_products(final_query, match_count=20)
         
-        # Create a list valid_products by filtering the candidates
         valid_products = []
+        min_store_price = 300.0 
+        
         for p in products:
             try:
                 price = float(p.get('price', 0))
-                # Apply budget filtering based on type
                 if budget_type == 'min':
-                    # Keep products where price >= amount
                     if price >= budget_amount:
                         valid_products.append(p)
                 elif budget_type == 'max':
-                    # Keep products where price <= amount
-                    if price <= budget_amount:
+                    if price <= (budget_amount * 1.10):
                         valid_products.append(p)
                 elif budget_type == 'approx':
-                    # Keep products where price <= (amount * 1.4)
+                    min_price = budget_amount * 0.6
                     max_price = budget_amount * 1.4
-                    if price <= max_price:
+                    if price >= min_price and price <= max_price:
                         valid_products.append(p)
-                elif budget_type == 'none':
-                    # No budget filter
+                else:
                     valid_products.append(p)
             except:
                 continue
 
-        # --- 4. SOFT FALLBACK LOGIC ---
-        budget_ignored = False
-        
-        # If valid_products is empty AFTER filtering
-        if not valid_products:
-            # Set valid_products = products[:3] (Take the top 3 style matches, ignoring price)
-            valid_products = products[:3]
-            budget_ignored = True
-        else:
-            # Set valid_products = valid_products[:3]
-            valid_products = valid_products[:3]
-            budget_ignored = False
-
-        # --- 5. UPDATE THE FINAL MESSAGE ---
+        # --- 4. FALLBACK LOGIC ---
         final_message = ""
         
-        if budget_ignored:
-            # If budget_ignored is True: Prepend text indicating budget was ignored
-            final_message = "I couldn't find an exact match around that price, but here are the best options matching the style you described:"
+        if not valid_products and budget_type == 'max' and budget_amount < min_store_price:
+            final_message = f"I'd love to help, but our high-quality pieces start around {min_store_price} EGP. Here are our most affordable options:"
+            valid_products = sorted(products, key=lambda x: float(x.get('price', 0)))[:3]
+        
+        elif not valid_products:
+             final_message = "I couldn't find an exact match within that budget, but here are the closest options to that style:"
+             valid_products = products[:3]
+        
         else:
-            # Else: Use the standard "I found this [Title]..." message
-            if valid_products:
-                p = valid_products[0]
-                metal_text = info['metal_preference']
-                if metal_text == 'Any': metal_text = "jewelry"
-                
-                final_message = (
-                    f"I found this {p['title']}! It matches the {info['volume_vibe'].lower()} style and is perfect for {info['event_occasion']}."
-                )
-            else:
-                final_message = "I couldn't find any matching products. Please try adjusting your preferences."
+            valid_products = valid_products[:3]
+            p = valid_products[0]
+            final_message = (
+                f"I found this {p['title']}! It matches the {info['volume_vibe'].lower()} style and is perfect for {info['event_occasion']}."
+            )
 
         return {
             "session_id": session_id,
