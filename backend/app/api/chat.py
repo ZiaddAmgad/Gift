@@ -1,5 +1,6 @@
 import json
 import re
+import ast  # <--- NEW: Backup parser for single quotes
 from typing import Dict, Any, Optional
 
 import google.generativeai as genai
@@ -33,51 +34,50 @@ def parse_budget_logic(text: str) -> Dict[str, Any]:
     return {'amount': amount, 'type': 'approx'}
 
 # --- HELPER: ROBUST JSON CLEANER ---
-def clean_json_text(text: str) -> str:
+def clean_and_parse_json(text: str) -> Dict[str, Any]:
     """
-    Aggressively extracts JSON object from text.
+    Tries multiple ways to parse the messy output from Gemini.
     """
     text = text.strip()
     
-    # Remove markdown code blocks
+    # 1. Strip Markdown Code Blocks
     text = re.sub(r'^```json\s*', '', text, flags=re.MULTILINE)
     text = re.sub(r'^```\s*', '', text, flags=re.MULTILINE)
     text = re.sub(r'```$', '', text, flags=re.MULTILINE)
     
-    # Find the FIRST '{' and the LAST '}'
-    start = text.find('{')
-    end = text.rfind('}')
+    # 2. Extract content between first { and last }
+    match = re.search(r'\{.*\}', text, re.DOTALL)
+    if match:
+        text = match.group(0)
     
-    if start != -1 and end != -1:
-        return text[start:end+1]
-    
-    return text
+    # 3. Try Standard JSON Parse (Double Quotes)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass # Failed? Fall through to backup.
+
+    # 4. Backup: Try Python Eval (Handles Single Quotes)
+    # Gemini often outputs {'key': 'value'} which is valid Python but invalid JSON.
+    try:
+        return ast.literal_eval(text)
+    except Exception:
+        pass # Failed again?
+        
+    # 5. Last Resort: Return Empty (Prevents Crash)
+    print(f"❌ FAILED TO PARSE JSON. RAW TEXT: {text}")
+    return {}
 
 def _get_gemini_chat_model():
     if not GOOGLE_API_KEY:
         raise RuntimeError("GOOGLE_API_KEY must be set in the environment.")
     genai.configure(api_key=GOOGLE_API_KEY)
     
-    # DEFINE THE SCHEMA (The Guardrails)
-    # This forces Gemini to ONLY return this exact structure.
-    response_schema = {
-        "type": "object",
-        "properties": {
-            "recipient": {"type": "string", "nullable": True},
-            "event_occasion": {"type": "string", "nullable": True},
-            "metal_preference": {"type": "string", "nullable": True},
-            "volume_vibe": {"type": "string", "nullable": True},
-            "budget": {"type": "string", "nullable": True},
-            "reply": {"type": "string"}
-        },
-        "required": ["reply"]
-    }
-
+    # We use 1.5-flash for speed.
     generation_config = genai.types.GenerationConfig(
         max_output_tokens=300,
         temperature=0.7,
-        response_mime_type="application/json",
-        response_schema=response_schema # <--- KEY FIX
+        # We ask for JSON, but we handle errors if it fails
+        response_mime_type="application/json" 
     )
     
     return genai.GenerativeModel(
@@ -134,8 +134,8 @@ async def extract_slots_and_reply(session: Dict[str, Any], user_message: str) ->
         "- 'Silver', 'White', 'Platinum' -> metal_preference: 'Silver'\n"
         "- 'Not sure', 'Idk', 'Mix' -> metal_preference: 'Any'\n"
         "- 'Simple', 'Clean' -> volume_vibe: 'Simple'\n"
-        "- 'Bold', 'Glamorous', 'Sparkly' -> volume_vibe: 'Glamorous'\n"
-        "- 'Artistic', 'Nature', 'Boho' -> volume_vibe: 'Artistic'\n"
+        "- 'Bold', 'Glamorous' -> volume_vibe: 'Glamorous'\n"
+        "- 'Artistic', 'Nature' -> volume_vibe: 'Artistic'\n"
         "- 'Classic', 'Elegant' -> volume_vibe: 'Classic'\n"
         "- 'Not sure', 'Safe' -> volume_vibe: 'Safe_Fallback'\n"
     )
@@ -147,9 +147,13 @@ async def extract_slots_and_reply(session: Dict[str, Any], user_message: str) ->
         response = await model.generate_content_async(system_prompt)
         raw_text = response.text or ""
         
-        # Clean and Parse
-        cleaned_text = clean_json_text(raw_text)
-        return json.loads(cleaned_text)
+        # USE ROBUST PARSER
+        parsed = clean_and_parse_json(raw_text)
+        
+        if not parsed:
+             raise ValueError("Empty or Invalid JSON")
+             
+        return parsed
         
     except Exception as e:
         print(f"ERROR GEMINI: {str(e)}")
@@ -244,7 +248,7 @@ async def chat_endpoint(chat_message: ChatMessage):
         products = search_products(final_query, match_count=20)
         
         valid_products = []
-        min_store_price = 300.0
+        min_store_price = 300.0 
         
         for p in products:
             try:
@@ -270,9 +274,11 @@ async def chat_endpoint(chat_message: ChatMessage):
         if not valid_products and budget_type == 'max' and budget_amount < min_store_price:
             final_message = f"I'd love to help, but our high-quality pieces start around {min_store_price} EGP. Here are our most affordable options:"
             valid_products = sorted(products, key=lambda x: float(x.get('price', 0)))[:3]
+        
         elif not valid_products:
              final_message = "I couldn't find an exact match within that budget, but here are the closest options to that style:"
              valid_products = products[:3]
+        
         else:
             valid_products = valid_products[:3]
             p = valid_products[0]
