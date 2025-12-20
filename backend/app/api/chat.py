@@ -5,7 +5,6 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 
-# Import the corrected search function
 from app.core.rag import search_products
 
 router = APIRouter()
@@ -37,16 +36,17 @@ class ChatResponse(BaseModel):
 SYSTEM_PROMPT = """
 You are "Fortuna", a warm, expert Jewelry Concierge.
 Your Goal: Help the user find a gift using a specific conversation flow.
-LANGUAGE: Strictly English. No Franco-Arabic.
+LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 
 --- CONVERSATION FLOW ---
 1. **Recipient:** First, find out who it is for.
-2. **Occasion & Material:** 
-   - Once Recipient is known, ask for Occasion.
-   - *CRITICAL:* If Occasion is given, REACT with empathy (e.g., "Happy Anniversary!", "That is wonderful!").
-   - Then, in a separate sentence (second bubble), ask: "To help me narrow it down, does she usually prefer **Gold or Silver**? (It's completely okay to say you're not sure!)"
-   - (If user says "Unsure", assure them it's okay and we will look at everything).
-3. **The Style Menu (Vibe Check):**
+2. **Occasion check:**
+   - If user says generic "Gift", ask: "Is there a special occasion you are celebrating, or just a nice surprise?"
+   - DO NOT move to Material until you know if there is a specific Event (Birthday, Anniversary) or if it is definitely "Just Because".
+3. **Occasion & Material:** 
+   - Once Occasion is specific (or confirmed "Just Because"), REACT with empathy.
+   - Then, in a separate bubble, ask: "To help me narrow it down, does she usually prefer **Gold or Silver**? (It's completely okay to say you're not sure!)"
+4. **The Style Menu (Vibe Check):**
    - Once Material is known, ask for her **Style** using these EXACT options:
      (A) Simple & Clean
      (B) Bold & Beautiful
@@ -54,31 +54,30 @@ LANGUAGE: Strictly English. No Franco-Arabic.
      (D) Classic & Elegant
      (E) Cozy & Comfortable
      (F) Trendy & Fashionable
-   - *If user asks for explanation:* Use the "Style Definitions" below.
-4. **The "Hero" Search:**
+   - *If user asks for explanation:* Return 3 separate bubbles. Bubble 1 (A & B), Bubble 2 (C & D), Bubble 3 (E & F). Use definitions below. No Emojis.
+5. **The "Hero" Search:**
    - If you have Recipient + Occasion + Material + Style -> SEARCH.
    - Return ONLY the #1 best matching product initially.
-5. **Iteration:**
-   - If the user asks for "more" or "different", return 3 products.
+6. **Iteration:**
+   - If the user asks for "more", "different", or says "I don't like it", return 3 products.
 
---- STYLE DEFINITIONS (Use ONLY if user asks) ---
-(A) Simple & Clean 👉 She likes things neat and calm. Not too many colors or stuff.
-(B) Bold & Beautiful 👉 She loves shiny things and being noticed.
-(C) Artistic & Nature-Loving 👉 She likes creative things and nature. Nothing boring or plain.
-(D) Classic & Elegant 👉 She likes things that always look nice like old-fashion and classy looks.
-(E) Cozy & Comfortable 👉 She loves soft, warm, comfy things. Feeling relaxed is important.
-(F) Trendy & Fashionable 👉 She likes what everyone is wearing right now and is always up to date.
+--- STYLE DEFINITIONS (No Emojis) ---
+(A) Simple & Clean: She likes things neat and calm. Not too many colors or stuff.
+(B) Bold & Beautiful: She loves shiny things and being noticed.
+(C) Artistic & Nature-Loving: She likes creative things and nature. Nothing boring or plain.
+(D) Classic & Elegant: She likes things that always look nice like old-fashion and classy looks.
+(E) Cozy & Comfortable: She loves soft, warm, comfy things. Feeling relaxed is important.
+(F) Trendy & Fashionable: She likes what everyone is wearing right now and is always up to date.
 
---- TAG MAPPING LOGIC (Strictly for JSON Output) ---
-
-**A. Recipient Mapping (Implicit Styles):**
-- Mom / Grandma -> "Traditional, Classic, Vintage"
-- Wife / Partner -> "Romantic, Classic, Statement"
+--- TAG MAPPING LOGIC ---
+**A. Recipient Mapping:**
+- Mom / Grandma / Aunt -> "Traditional, Classic, Vintage"
+- Wife / Partner / Fiancee -> "Romantic, Classic, Statement"
 - Girlfriend -> "Romantic, Trendy, Dainty"
 - Sister / Friend -> "Trendy, Boho, Modern"
 - Daughter / Niece -> "Dainty, Modern, Minimalist"
 
-**B. Occasion Mapping (Split into 'occasion_tags' and 'style_tags'):**
+**B. Occasion Mapping:**
 - Daily / Just Because -> Occasion: "Daily" | Style: "Minimalist, Dainty"
 - Party / Wedding -> Occasion: "Party" | Style: "Statement, Bold"
 - Valentine -> Occasion: "Valentine" | Style: "Romantic"
@@ -90,10 +89,10 @@ LANGUAGE: Strictly English. No Franco-Arabic.
 **C. Material Mapping:**
 - Gold -> "Gold, Gold Plated, Rose Gold"
 - Silver -> "Silver, Sterling Silver, White Gold, Platinum"
-- Both / Mix -> "Gold, Silver, Mixed"
+- Both / Mix -> "Gold, Gold Plated, Rose Gold, Silver, Sterling Silver, White Gold, Platinum, Mixed"
 - Unsure -> "Gold, Silver, Rose Gold, White Gold, Gold Plated, Sterling Silver, Platinum, Enamel, Leather, Cord, Pearl, Beaded, Mixed"
 
-**D. Style Options (Map Letter to Tags):**
+**D. Style Options:**
 - A -> Style: "Minimalist, Modern, Geometric, Dainty" | Gemstone: "None"
 - B -> Style: "Bold, Statement, Art Deco" | Gemstone: "Zircon, Crystal, Diamond"
 - C -> Style: "Boho, Nature, Vintage, Romantic" | Material: "Enamel, Mixed, Beaded" | Gemstone: "Turquoise, Emerald"
@@ -103,11 +102,7 @@ LANGUAGE: Strictly English. No Franco-Arabic.
 
 --- OUTPUT FORMAT (JSON) ---
 {
-    "thought": "User picked C and Silver for Wife.",
-    "reply_bubbles": [
-        "First bubble text (Empathy/Reaction)", 
-        "Second bubble text (Question)"
-    ],
+    "reply_bubbles": ["String 1", "String 2"],
     "search_params": {
         "ready_to_search": boolean,
         "recipient_tags": "...",
@@ -115,7 +110,7 @@ LANGUAGE: Strictly English. No Franco-Arabic.
         "material_tags": "...",
         "style_tags": "...",
         "gemstone_tags": "...",
-        "product_count": 1 // 1 for Hero Search, 3 for Iteration, 0 if chatting
+        "product_count": 1 
     }
 }
 """
@@ -123,35 +118,27 @@ LANGUAGE: Strictly English. No Franco-Arabic.
 @router.post("/message", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
-        # 1. Prepare History
         recent_messages = request.messages[-15:]
         conversation_text = ""
         for msg in recent_messages:
             role_label = "User" if msg.role == "user" else "Assistant"
             conversation_text += f"{role_label}: {msg.content}\n"
 
-        # 2. Call Gemini
         prompt = f"{SYSTEM_PROMPT}\n\n--- CONVERSATION HISTORY ---\n{conversation_text}\n\n--- JSON RESPONSE ---"
-        
         response = await model.generate_content_async(prompt)
         
-        # 3. Parse JSON
         try:
             ai_data = json.loads(response.text)
         except json.JSONDecodeError:
             return ChatResponse(text_bubbles=["I'm listening! Could you tell me a bit more?"])
 
         bubbles = ai_data.get("reply_bubbles", [])
-        if not bubbles: 
-            bubbles = ["Let me check on that for you."]
+        if not bubbles: bubbles = ["Let me check on that for you."]
         
         params = ai_data.get("search_params", {})
         products = []
 
-        # 4. Search Execution
         if params.get("ready_to_search", False):
-            
-            # Construct Query: [Style] [Material] [Gemstone] [Occasion] [Recipient]
             query_parts = [
                 params.get('style_tags', ''),
                 params.get('material_tags', ''),
@@ -164,21 +151,23 @@ async def chat_endpoint(request: ChatRequest):
             count = params.get("product_count", 1)
             print(f"🔎 Generated Query: {query} (Requesting: {count})")
             
-            # Fetch 5 candidates to ensure we have quality options for the Hero selection
-            # Note: rag.py now accepts 'top_k' properly
+            # Fetch 5 candidates
             raw_results = search_products(query_text=query, top_k=5)
             
             if raw_results:
-                products = raw_results[:count]
+                # --- FIX FOR REPEATED PRODUCTS ---
+                if count == 1:
+                    # Hero Search: Top 1
+                    products = raw_results[:1]
+                elif count == 3:
+                    # Iteration Search: Skip the first one, return next 3
+                    # This assumes raw_results[0] was the one just shown and rejected
+                    products = raw_results[1:4]
             else:
-                # Fallback: Best Sellers
-                bubbles.append("I couldn't find an exact match for that specific combination, but here are our most popular pieces.")
+                bubbles.append("I couldn't find an exact match, but here are our most popular pieces.")
                 products = search_products(query_text="Best seller", top_k=3)
 
-        return ChatResponse(
-            text_bubbles=bubbles, 
-            products=products
-        )
+        return ChatResponse(text_bubbles=bubbles, products=products)
 
     except Exception as e:
         print(f"❌ API Error: {str(e)}")
