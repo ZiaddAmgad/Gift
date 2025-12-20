@@ -21,7 +21,7 @@ app.add_middleware(
 )
 
 # Include chat router
-app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 
 @app.get("/")
 def read_root():
