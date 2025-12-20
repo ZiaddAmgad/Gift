@@ -73,24 +73,38 @@ export const useChat = () => {
       });
 
       const data = await response.json();
-      setLoading(false); // Stop loading indicator before showing bubbles
+      
+      // 1. Stop the initial loading
+      setLoading(false); 
 
-      // --- DELAY LOGIC HERE ---
+      // 2. Handle Text Bubbles with "Inter-Bubble Loading"
       if (data.text_bubbles && Array.isArray(data.text_bubbles)) {
-        for (const bubbleText of data.text_bubbles) {
-          // Add bubble
+        for (let i = 0; i < data.text_bubbles.length; i++) {
+          const bubbleText = data.text_bubbles[i];
+
+          // Add the current bubble
           setMessages(prev => [...prev, { type: 'bot', text: bubbleText }]);
           
-          // Wait 1.5 seconds before showing the next one (if there is a next one)
-          // You can change 1500 to 5000 if you want 5 seconds
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          // Check if there are MORE bubbles coming after this one
+          if (i < data.text_bubbles.length - 1) {
+            setLoading(true); // Show "Typing..."
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s
+            setLoading(false); // Hide "Typing..." to show the next message
+          }
         }
       } 
       else if (data.message) {
         setMessages(prev => [...prev, { type: 'bot', text: data.message }]);
       }
 
+      // 3. Show Products (if any)
       if (data.products && data.products.length > 0) {
+        // Optional: Small delay before products appear for better pacing
+        if (data.text_bubbles?.length > 0) {
+            setLoading(true);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            setLoading(false);
+        }
         setMessages(prev => [...prev, { type: 'products', items: data.products }]);
       }
 
