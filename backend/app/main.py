@@ -25,4 +25,4 @@ app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 
 @app.get("/")
 def read_root():
-    return {"Hello": "World"}
+    return {"Hello": "My World"}
