@@ -12,13 +12,14 @@ export const useChat = () => {
 
   const [messages, setMessages] = useState([initialMessage]);
   const [loading, setLoading] = useState(false);
+  
+  // Note: Session ID is now purely for analytics, not for backend logic.
   const [sessionId, setSessionId] = useState(null);
 
   // 1. ON LOAD: Check if we have valid history
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // A. Setup Session ID (Never expires, identifies the user)
     let storedId = localStorage.getItem('chat_session_id');
     if (!storedId) {
       storedId = uuidv4();
@@ -26,24 +27,17 @@ export const useChat = () => {
     }
     setSessionId(storedId);
 
-    // B. Check Chat History (Expires after 1 hour of inactivity)
     const savedString = localStorage.getItem('chat_history');
     if (savedString) {
       try {
         const saved = JSON.parse(savedString);
         const now = Date.now();
         
-        // Calculate how long since the last message was saved
-        const timeSinceLastMessage = now - saved.timestamp;
-
-        if (timeSinceLastMessage < IDLE_TIMEOUT_MS) {
-          // STILL FRESH: Restore the chat
+        if ((now - saved.timestamp) < IDLE_TIMEOUT_MS) {
           setMessages(saved.data);
         } else {
-          // EXPIRED: Delete only this chat history
           console.log("Session expired. Clearing chat history.");
           localStorage.removeItem('chat_history');
-          // We do NOT clear 'chat_session_id', so the backend still knows it's the same user returning
         }
       } catch (e) {
         console.error("Error parsing chat history:", e);
@@ -52,43 +46,56 @@ export const useChat = () => {
     }
   }, []);
 
-  // 2. ON UPDATE: Save history and RESET the timer
+  // 2. ON UPDATE: Save history
   useEffect(() => {
-    // Only save if we have more than just the greeting
     if (messages.length > 1) {
       const payload = JSON.stringify({
-        timestamp: Date.now(), // <--- This resets the 1-hour timer every time a message is added
+        timestamp: Date.now(),
         data: messages
       });
       localStorage.setItem('chat_history', payload);
     }
   }, [messages]);
 
-  // 3. Send Logic
+  // 3. Send Logic (STATELESS VERSION)
   const sendMessage = useCallback(async (text) => {
     if (!text || !text.trim()) return;
 
-    // UI Update (Optimistic)
-    setMessages(prev => [...prev, { type: 'user', text }]);
+    // A. Update UI Optimistically
+    const newUserMsg = { type: 'user', text };
+    const newHistory = [...messages, newUserMsg];
+    setMessages(newHistory);
     setLoading(true);
-
-    let currentSessionId = sessionId || localStorage.getItem('chat_session_id') || uuidv4();
 
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
       
-      const response = await fetch(`${API_BASE}/api/chat`, {
+      // B. Prepare History for Backend
+      const apiHistory = newHistory
+        .filter(msg => msg.type === 'user' || msg.type === 'bot')
+        .map(msg => ({
+          role: msg.type === 'user' ? 'user' : 'assistant',
+          content: msg.text || "" 
+        }));
+
+      const response = await fetch(`${API_BASE}/api/chat/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          message: text, 
-          session_id: currentSessionId 
+          messages: apiHistory 
         }),
       });
 
       const data = await response.json();
 
-      if (data.message) {
+      // C. Handle Response (UPDATED FOR TEXT BUBBLES ARRAY)
+      if (data.text_bubbles && Array.isArray(data.text_bubbles)) {
+        // Add each bubble sequentially
+        const newBotMessages = data.text_bubbles.map(text => ({ type: 'bot', text }));
+        setMessages(prev => [...prev, ...newBotMessages]);
+      } 
+      // Fallback for singular message if ever needed
+      else if (data.message) {
         setMessages(prev => [...prev, { type: 'bot', text: data.message }]);
       }
 
@@ -98,11 +105,11 @@ export const useChat = () => {
 
     } catch (error) {
       console.error("Chat Error:", error);
-      setMessages(prev => [...prev, { type: 'bot', text: "Sorry, I'm having trouble connecting to the server." }]);
+      setMessages(prev => [...prev, { type: 'bot', text: "I'm having a little trouble connecting. Could you say that again?" }]);
     } finally {
       setLoading(false);
     }
-  }, [sessionId]);
+  }, [messages]); 
 
   return { messages, sendMessage, loading };
 };

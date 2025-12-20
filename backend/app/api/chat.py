@@ -1,315 +1,185 @@
+import os
 import json
-import re
-from typing import Dict, Any, Optional
-
 import google.generativeai as genai
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
 
-from app.config import GOOGLE_API_KEY
+# Import the corrected search function
 from app.core.rag import search_products
 
 router = APIRouter()
 
+# --- CONFIGURATION ---
+if not os.getenv("GOOGLE_API_KEY"):
+    raise RuntimeError("GOOGLE_API_KEY is not set.")
+
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
+model = genai.GenerativeModel(
+    'models/gemini-2.5-flash',
+    generation_config={"response_mime_type": "application/json"}
+)
+
 # --- DATA MODELS ---
-class ChatMessage(BaseModel):
-    message: str
-    session_id: Optional[str] = None
+class Message(BaseModel):
+    role: str
+    content: str
 
-# --- IN-MEMORY SESSION STORE ---
-SESSIONS: Dict[str, Dict[str, Any]] = {}
+class ChatRequest(BaseModel):
+    messages: List[Message]
 
-# --- HELPER: BUDGET PARSER ---
-def parse_budget_logic(text: str) -> Dict[str, Any]:
-    """Analyzes budget text for amount AND intent (Over vs Under vs Approx)."""
-    if not text:
-        return {'amount': 0, 'type': 'none'}
-    
-    clean_text = text.lower().replace(",", "")
-    numbers = re.findall(r'\d+', clean_text)
-    if not numbers:
-        return {'amount': 0, 'type': 'none'}
-    
-    amount = float(max(numbers, key=lambda x: float(x)))
-    
-    # Detect intent
-    if any(w in clean_text for w in ["over", "above", "more than", "start", "min"]):
-        return {'amount': amount, 'type': 'min'}
-    if any(w in clean_text for w in ["under", "below", "less than"]):
-        return {'amount': amount, 'type': 'max'}
-    
-    # Default to approx if number exists but no keywords
-    return {'amount': amount, 'type': 'approx'}
+class ChatResponse(BaseModel):
+    text_bubbles: List[str]
+    products: Optional[List[dict]] = []
 
-# --- HELPER: SIMPLE JSON CLEANER ---
-def clean_json_text(text: str) -> str:
-    """Simple function that just strips markdown backticks."""
-    text = text.strip()
-    # Remove markdown code blocks
-    if text.startswith("```"):
-        lines = text.splitlines()
-        lines = [l for l in lines if not l.strip().startswith("```")]
-        text = "\n".join(lines)
-    return text.strip()
+# --- SYSTEM PROMPT ---
+SYSTEM_PROMPT = """
+You are "Fortuna", a warm, expert Jewelry Concierge.
+Your Goal: Help the user find a gift using a specific conversation flow.
+LANGUAGE: Strictly English. No Franco-Arabic.
 
-# --- HELPER: GET GEMINI MODEL ---
-def _get_gemini_chat_model():
-    if not GOOGLE_API_KEY:
-        raise RuntimeError("GOOGLE_API_KEY must be set in the environment.")
-    
-    genai.configure(api_key=GOOGLE_API_KEY)
-    
-    generation_config = genai.types.GenerationConfig(
-        max_output_tokens=1000,  # Increased to prevent "Unterminated string" errors
-        temperature=0.7,
-        response_mime_type="application/json"
-    )
-    
-    return genai.GenerativeModel(
-        "models/gemini-2.5-flash",
-        generation_config=generation_config
-    )
+--- CONVERSATION FLOW ---
+1. **Recipient:** First, find out who it is for.
+2. **Occasion & Material:** 
+   - Once Recipient is known, ask for Occasion.
+   - *CRITICAL:* If Occasion is given, REACT with empathy (e.g., "Happy Anniversary!", "That is wonderful!").
+   - Then, in a separate sentence (second bubble), ask: "To help me narrow it down, does she usually prefer **Gold or Silver**? (It's completely okay to say you're not sure!)"
+   - (If user says "Unsure", assure them it's okay and we will look at everything).
+3. **The Style Menu (Vibe Check):**
+   - Once Material is known, ask for her **Style** using these EXACT options:
+     (A) Simple & Clean
+     (B) Bold & Beautiful
+     (C) Artistic & Nature-Loving
+     (D) Classic & Elegant
+     (E) Cozy & Comfortable
+     (F) Trendy & Fashionable
+   - *If user asks for explanation:* Use the "Style Definitions" below.
+4. **The "Hero" Search:**
+   - If you have Recipient + Occasion + Material + Style -> SEARCH.
+   - Return ONLY the #1 best matching product initially.
+5. **Iteration:**
+   - If the user asks for "more" or "different", return 3 products.
 
-# --- HELPER: GET OR CREATE SESSION ---
-def get_session(session_id: str) -> Dict[str, Any]:
-    if session_id not in SESSIONS:
-        SESSIONS[session_id] = {
-            "step": "start",
-            "info": {
-                "recipient": None,
-                "event_occasion": None,
-                "metal_preference": None,
-                "volume_vibe": None,
-                "budget": None
-            },
-        }
-    return SESSIONS[session_id]
+--- STYLE DEFINITIONS (Use ONLY if user asks) ---
+(A) Simple & Clean 👉 She likes things neat and calm. Not too many colors or stuff.
+(B) Bold & Beautiful 👉 She loves shiny things and being noticed.
+(C) Artistic & Nature-Loving 👉 She likes creative things and nature. Nothing boring or plain.
+(D) Classic & Elegant 👉 She likes things that always look nice like old-fashion and classy looks.
+(E) Cozy & Comfortable 👉 She loves soft, warm, comfy things. Feeling relaxed is important.
+(F) Trendy & Fashionable 👉 She likes what everyone is wearing right now and is always up to date.
 
-# --- HELPER: RESET SESSION ---
-def reset_session(session_id: str) -> Dict[str, Any]:
-    if session_id in SESSIONS:
-        del SESSIONS[session_id]
-    return get_session(session_id)
+--- TAG MAPPING LOGIC (Strictly for JSON Output) ---
 
-# --- EXTRACTION FUNCTION ---
-async def extract_slots_and_reply(session: Dict[str, Any], user_message: str) -> Dict[str, Any]:
-    """Extracts slots from user message using Gemini. Returns safe fallback on error."""
-    info = session["info"]
-    
-    system_prompt = (
-        "You are an AI Jewelry Concierge. Extract slots based on user answers.\n"
-        "Current Info: " + json.dumps(info) + "\n\n"
-        "User Message: '" + user_message + "'\n\n"
-        
-        "QUESTION STRATEGY (Strict Order - Only ask if slot is missing):\n"
-        "1. Recipient: If 'recipient' is missing, ask 'Who are you shopping for?'\n"
-        "2. Occasion: If 'event_occasion' is missing, ask 'What is the occasion? (Birthday, Anniversary, Holiday, or Just Because?)'\n"
-        "3. Metal: If 'metal_preference' is missing, ask 'Does she usually wear Gold or Silver? (It's okay to say you don't know!)'\n"
-        "4. Vibe: If 'volume_vibe' is missing, ask 'How would you describe her style?\n"
-        "   (A) Simple & Clean\n"
-        "   (B) Bold & Glamorous\n"
-        "   (C) Artistic & Nature-loving\n"
-        "   (D) Classic & Elegant\n"
-        "   (Or say 'I don't know' and we'll play it safe!)'\n"
-        "5. Budget: If 'budget' is missing, ask 'I think I have an idea of what she likes. Do you have a certain budget in mind?'\n"
-        "6. If ALL slots are filled -> Set 'reply' to 'SEARCH_READY'.\n\n"
-        
-        "MAPPING LOGIC:\n"
-        "- 'Anniversary', 'Wedding' -> event_occasion: 'Anniversary'\n"
-        "- 'Birthday', 'Bday' -> event_occasion: 'Birthday'\n"
-        "- 'Holiday', 'Eid', 'Christmas' -> event_occasion: 'Holiday'\n"
-        "- 'Just because', 'Gift' -> event_occasion: 'Just Because'\n"
-        "- 'Gold' -> metal_preference: 'Gold'\n"
-        "- 'Silver', 'White', 'Platinum' -> metal_preference: 'Silver'\n"
-        "- 'Not sure', 'Idk', 'Mix', 'Both', 'I don't know' -> metal_preference: 'Any'\n"
-        "- 'Simple', 'Clean', 'Modern', 'Minimalist' -> volume_vibe: 'Simple'\n"
-        "- 'Bold', 'Glamorous', 'Sparkly', 'Statement' -> volume_vibe: 'Glamorous'\n"
-        "- 'Artistic', 'Nature', 'Boho', 'Flowers', 'Vintage' -> volume_vibe: 'Artistic'\n"
-        "- 'Classic', 'Elegant', 'Traditional' -> volume_vibe: 'Classic'\n"
-        "- 'Not sure', 'Idk', 'Safe', 'Play it safe', 'I don't know' -> volume_vibe: 'Safe_Fallback'\n\n"
-        
-        "OUTPUT FORMAT (JSON ONLY):\n"
-        "{\n"
-        '  "recipient": "...",\n'
-        '  "event_occasion": "...",\n'
-        '  "metal_preference": "...",\n'
-        '  "volume_vibe": "...",\n'
-        '  "budget": "...",\n'
-        '  "reply": "..."\n'
-        "}"
-    )
-    
-    model = _get_gemini_chat_model()
-    
-    try:
-        response = await model.generate_content_async(system_prompt)
-        raw_text = response.text or ""
-        cleaned_text = clean_json_text(raw_text)
-        
-        # Try to parse JSON
-        parsed = json.loads(cleaned_text)
-        
-        # Validate that we got a dictionary
-        if not isinstance(parsed, dict):
-            raise ValueError("Response is not a dictionary")
-        
-        return parsed
-        
-    except Exception as e:
-        print(f"ERROR GEMINI JSON PARSING: {str(e)}")
-        print(f"RAW TEXT: {raw_text[:500] if 'raw_text' in locals() else 'N/A'}")
-        
-        # Safe Fallback: Return existing slot values and ask user to rephrase
-        return {
-            "recipient": info.get("recipient"),
-            "event_occasion": info.get("event_occasion"),
-            "metal_preference": info.get("metal_preference"),
-            "volume_vibe": info.get("volume_vibe"),
-            "budget": info.get("budget"),
-            "reply": "Could you please rephrase that?"
-        }
+**A. Recipient Mapping (Implicit Styles):**
+- Mom / Grandma -> "Traditional, Classic, Vintage"
+- Wife / Partner -> "Romantic, Classic, Statement"
+- Girlfriend -> "Romantic, Trendy, Dainty"
+- Sister / Friend -> "Trendy, Boho, Modern"
+- Daughter / Niece -> "Dainty, Modern, Minimalist"
 
-# --- CHAT ENDPOINT ---
-@router.post("/chat")
-async def chat_endpoint(chat_message: ChatMessage):
-    user_text = chat_message.message.strip()
-    session_id = chat_message.session_id or "default-session"
-    session = get_session(session_id)
-    
-    # Greeting / Reset
-    if user_text.lower() in {"hi", "hello", "hey", "start", "restart"}:
-        session = reset_session(session_id)
-        return {
-            "session_id": session_id,
-            "message": "Welcome! I can help you find the perfect gift. Who are you shopping for today?",
-            "slots": session["info"],
-            "products": []
-        }
-    
-    # Extract slots
-    slot_result = await extract_slots_and_reply(session, user_text)
-    
-    # Update session memory (only update if new value provided)
-    info = session["info"]
-    if slot_result.get("recipient"):
-        info["recipient"] = slot_result["recipient"]
-    if slot_result.get("event_occasion"):
-        info["event_occasion"] = slot_result["event_occasion"]
-    if slot_result.get("metal_preference"):
-        info["metal_preference"] = slot_result["metal_preference"]
-    if slot_result.get("volume_vibe"):
-        info["volume_vibe"] = slot_result["volume_vibe"]
-    if slot_result.get("budget"):
-        info["budget"] = slot_result["budget"]
-    
-    reply_text = slot_result.get("reply", "")
-    
-    # Check if all slots are ready
-    is_ready = (reply_text == "SEARCH_READY") or (
-        info["recipient"] and
-        info["event_occasion"] and
-        info["metal_preference"] and
-        info["volume_vibe"] and
-        info["budget"]
-    )
-    
-    # If not ready, return the reply and current slots
-    if not is_ready:
-        return {
-            "session_id": session_id,
-            "message": reply_text,
-            "slots": session["info"],
-            "products": []
-        }
-    
-    # --- SEARCH LOGIC (All slots filled) ---
-    # Parse budget
-    budget_info = parse_budget_logic(str(info["budget"]))
-    budget_amount = budget_info['amount']
-    budget_type = budget_info['type']
-    
-    # Build query
-    query_parts = [f"Recipient: {info['recipient']}"]
-    
-    # Metal mapping
-    metal_pref = info['metal_preference']
-    if metal_pref == 'Any':
-        query_parts.append("Material: Gold, Silver, Rose Gold, Mixed. Skin Tone: Neutral")
-    elif metal_pref == 'Gold':
-        query_parts.append("Material: Gold, Gold Plated. Skin Tone: Warm Tones")
-    elif metal_pref == 'Silver':
-        query_parts.append("Material: Silver, Sterling Silver, White Gold. Skin Tone: Cool Tones")
-    
-    # Occasion mapping
-    occ = info['event_occasion']
-    if occ == 'Anniversary':
-        query_parts.append("Occasion: Party, Anniversary. Attributes: Romantic, Love, Eternity")
-    elif occ == 'Holiday':
-        query_parts.append("Occasion: Party, Holiday. Attributes: Festive, Sparkly, Gift")
-    elif occ == 'Birthday':
-        query_parts.append("Occasion: Party, Birthday. Attributes: Celebration, Stylish")
-    elif occ == 'Just Because':
-        query_parts.append("Occasion: Daily, Gift. Attributes: Affordable, Casual")
-    
-    # Vibe mapping
-    vibe = info['volume_vibe']
-    if vibe == 'Simple':
-        query_parts.append("Style: Minimalist, Modern, Geometric, Dainty. Gemstone: None")
-    elif vibe == 'Glamorous':
-        query_parts.append("Style: Bold, Statement, Art Deco, Trendy. Gemstone: Diamond, Zircon")
-    elif vibe == 'Artistic':
-        query_parts.append("Style: Boho, Nature, Vintage, Romantic. Material: Mixed")
-    elif vibe == 'Classic':
-        query_parts.append("Style: Classic, Traditional, Romantic. Gemstone: Pearl")
-    elif vibe == 'Safe_Fallback':
-        query_parts.append("Style: Classic, Minimalist, Dainty. Occasion: Daily")
-    
-    final_query = ". ".join(query_parts)
-    print(f"🔎 QUERY: {final_query} | Budget: {budget_info}")
-    
-    # Search products
-    products = search_products(final_query, match_count=20)
-    
-    # Filter by budget
-    valid_products = []
-    for p in products:
-        try:
-            price = float(p.get('price', 0))
-            if budget_type == 'min':
-                if price >= budget_amount:
-                    valid_products.append(p)
-            elif budget_type == 'max':
-                if price <= (budget_amount * 1.10):
-                    valid_products.append(p)
-            elif budget_type == 'approx':
-                max_price = budget_amount * 1.4
-                if price <= max_price:
-                    valid_products.append(p)
-            else:  # 'none'
-                valid_products.append(p)
-        except:
-            continue
-    
-    # Fallback logic
-    final_message = ""
-    min_store_price = 300.0
-    
-    if not valid_products and budget_type == 'max' and budget_amount < min_store_price:
-        final_message = f"I'd love to help, but our high-quality pieces start around {min_store_price} EGP. Here are our most affordable options:"
-        valid_products = sorted(products, key=lambda x: float(x.get('price', 0)))[:3]
-    elif not valid_products:
-        final_message = "I couldn't find an exact match within that budget, but here are the closest options to that style:"
-        valid_products = products[:3]
-    else:
-        valid_products = valid_products[:3]
-        if valid_products:
-            p = valid_products[0]
-            final_message = f"I found this {p['title']}! It matches the {info['volume_vibe'].lower()} style and is perfect for {info['event_occasion']}."
-        else:
-            final_message = "I couldn't find any matching products. Please try adjusting your preferences."
-    
-    return {
-        "session_id": session_id,
-        "message": final_message,
-        "products": valid_products
+**B. Occasion Mapping (Split into 'occasion_tags' and 'style_tags'):**
+- Daily / Just Because -> Occasion: "Daily" | Style: "Minimalist, Dainty"
+- Party / Wedding -> Occasion: "Party" | Style: "Statement, Bold"
+- Valentine -> Occasion: "Valentine" | Style: "Romantic"
+- Anniversary -> Occasion: "Anniversary" | Style: "Romantic, Classic"
+- Mother's Day -> Occasion: "Mother's Day" | Style: "Traditional"
+- Holiday -> Occasion: "Holiday" | Style: "Statement"
+- Gift -> Occasion: "Gift" | Style: ""
+
+**C. Material Mapping:**
+- Gold -> "Gold, Gold Plated, Rose Gold"
+- Silver -> "Silver, Sterling Silver, White Gold, Platinum"
+- Both / Mix -> "Gold, Silver, Mixed"
+- Unsure -> "Gold, Silver, Rose Gold, White Gold, Gold Plated, Sterling Silver, Platinum, Enamel, Leather, Cord, Pearl, Beaded, Mixed"
+
+**D. Style Options (Map Letter to Tags):**
+- A -> Style: "Minimalist, Modern, Geometric, Dainty" | Gemstone: "None"
+- B -> Style: "Bold, Statement, Art Deco" | Gemstone: "Zircon, Crystal, Diamond"
+- C -> Style: "Boho, Nature, Vintage, Romantic" | Material: "Enamel, Mixed, Beaded" | Gemstone: "Turquoise, Emerald"
+- D -> Style: "Classic, Traditional, Romantic" | Gemstone: "Pearl, Sapphire"
+- E -> Style: "Boho, Minimalist" | Material: "Leather, Cord, Beaded" | Gemstone: "Onyx, Turquoise"
+- F -> Style: "Trendy, Modern, Industrial" | Gemstone: "Zircon"
+
+--- OUTPUT FORMAT (JSON) ---
+{
+    "thought": "User picked C and Silver for Wife.",
+    "reply_bubbles": [
+        "First bubble text (Empathy/Reaction)", 
+        "Second bubble text (Question)"
+    ],
+    "search_params": {
+        "ready_to_search": boolean,
+        "recipient_tags": "...",
+        "occasion_tags": "...",
+        "material_tags": "...",
+        "style_tags": "...",
+        "gemstone_tags": "...",
+        "product_count": 1 // 1 for Hero Search, 3 for Iteration, 0 if chatting
     }
+}
+"""
+
+@router.post("/message", response_model=ChatResponse)
+async def chat_endpoint(request: ChatRequest):
+    try:
+        # 1. Prepare History
+        recent_messages = request.messages[-15:]
+        conversation_text = ""
+        for msg in recent_messages:
+            role_label = "User" if msg.role == "user" else "Assistant"
+            conversation_text += f"{role_label}: {msg.content}\n"
+
+        # 2. Call Gemini
+        prompt = f"{SYSTEM_PROMPT}\n\n--- CONVERSATION HISTORY ---\n{conversation_text}\n\n--- JSON RESPONSE ---"
+        
+        response = await model.generate_content_async(prompt)
+        
+        # 3. Parse JSON
+        try:
+            ai_data = json.loads(response.text)
+        except json.JSONDecodeError:
+            return ChatResponse(text_bubbles=["I'm listening! Could you tell me a bit more?"])
+
+        bubbles = ai_data.get("reply_bubbles", [])
+        if not bubbles: 
+            bubbles = ["Let me check on that for you."]
+        
+        params = ai_data.get("search_params", {})
+        products = []
+
+        # 4. Search Execution
+        if params.get("ready_to_search", False):
+            
+            # Construct Query: [Style] [Material] [Gemstone] [Occasion] [Recipient]
+            query_parts = [
+                params.get('style_tags', ''),
+                params.get('material_tags', ''),
+                params.get('gemstone_tags', ''),
+                params.get('occasion_tags', ''),
+                params.get('recipient_tags', '')
+            ]
+            
+            query = " ".join([p for p in query_parts if p]).strip()
+            count = params.get("product_count", 1)
+            print(f"🔎 Generated Query: {query} (Requesting: {count})")
+            
+            # Fetch 5 candidates to ensure we have quality options for the Hero selection
+            # Note: rag.py now accepts 'top_k' properly
+            raw_results = search_products(query_text=query, top_k=5)
+            
+            if raw_results:
+                products = raw_results[:count]
+            else:
+                # Fallback: Best Sellers
+                bubbles.append("I couldn't find an exact match for that specific combination, but here are our most popular pieces.")
+                products = search_products(query_text="Best seller", top_k=3)
+
+        return ChatResponse(
+            text_bubbles=bubbles, 
+            products=products
+        )
+
+    except Exception as e:
+        print(f"❌ API Error: {str(e)}")
+        return ChatResponse(text_bubbles=["I'm having a brief connection issue. Please say that again?"])
