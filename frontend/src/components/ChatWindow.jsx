@@ -52,7 +52,8 @@ const ChatWindow = ({ isOpen, onClose }) => {
                 ))}
               </div>
             ) : (
-              <div className={`max-w-[85%] px-4 py-3 text-sm shadow-sm ${
+              // --- THE FIX: Added 'whitespace-pre-wrap leading-relaxed' here ---
+              <div className={`max-w-[85%] px-4 py-3 text-sm shadow-sm whitespace-pre-wrap leading-relaxed ${
                 msg.type === 'user' 
                   ? 'bg-black text-white rounded-2xl rounded-br-none' 
                   : 'bg-white border border-gray-100 text-gray-800 rounded-2xl rounded-bl-none'
