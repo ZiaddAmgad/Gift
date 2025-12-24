@@ -2,20 +2,16 @@ import React from 'react';
 
 const ProductCard = ({ product }) => {
   
-  // 1. Generate Shopify Handle from Title (if URL missing)
-  // "Tex Flower Set" -> "tex-flower-set"
   const generateHandle = (title) => {
     return title
       .toLowerCase()
       .trim()
-      .replace(/[^\w\s-]/g, '') // Remove non-word chars
-      .replace(/[\s_-]+/g, '-') // Replace spaces with dashes
-      .replace(/^-+|-+$/g, ''); // Trim dashes
+      .replace(/[^\w\s-]/g, '') 
+      .replace(/[\s_-]+/g, '-') 
+      .replace(/^-+|-+$/g, ''); 
   };
 
   const handle = generateHandle(product.title || "");
-  
-  // Use the live store URL structure
   const linkUrl = product.product_url || `https://koaysilver.com/products/${handle}`;
 
   return (
@@ -32,7 +28,6 @@ const ProductCard = ({ product }) => {
           className="w-full h-full object-cover"
           onError={(e) => {e.target.src = 'https://placehold.co/400x300?text=No+Image'}}
         />
-        {/* Match Score Removed */}
       </div>
       
       <div className="p-4">
@@ -47,9 +42,8 @@ const ProductCard = ({ product }) => {
           {product.description}
         </p>
         
-        {/* Style Tags Removed */}
-
-        <div className="w-full bg-black text-white py-2 rounded text-center text-sm font-medium group-hover:bg-gray-800 transition-colors">
+        {/* VIEW BUTTON: Updated to Green */}
+        <div className="w-full bg-[#154027] text-white py-2 rounded text-center text-sm font-medium group-hover:bg-[#1e5736] transition-colors">
           View Product
         </div>
       </div>

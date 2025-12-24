@@ -2,30 +2,23 @@ import React, { useState, useEffect } from 'react';
 import ChatWindow from './ChatWindow';
 
 const ChatWidget = () => {
-  // Default to false, but we will check localStorage immediately
   const [isOpen, setIsOpen] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false); // To prevent hydration mismatch
+  const [isLoaded, setIsLoaded] = useState(false);
 
-  // 1. On Mount: Check if we were left open
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedState = localStorage.getItem('widget_is_open');
       if (savedState === 'true') {
         setIsOpen(true);
       }
-      setIsLoaded(true); // Ready to render
+      setIsLoaded(true);
     }
   }, []);
 
-  // 2. Sync with Parent (Shopify) & LocalStorage
   useEffect(() => {
-    if (!isLoaded) return; // Don't run before mount
-
-    // Tell Shopify to resize the iframe
+    if (!isLoaded) return;
     const message = isOpen ? "chat-opened" : "chat-closed";
     window.parent.postMessage(message, "*");
-    
-    // Save state so it survives reloads/re-renders
     localStorage.setItem('widget_is_open', isOpen);
   }, [isOpen, isLoaded]);
 
@@ -33,24 +26,22 @@ const ChatWidget = () => {
     setIsOpen(prev => !prev);
   };
 
-  // Prevent flash of wrong content
   if (!isLoaded) return null;
 
   return (
     <div className="flex flex-col h-full w-full relative">
       
-      {/* CHAT AREA */}
       {isOpen && (
         <div className="absolute bottom-20 right-0 w-full h-[calc(100%-90px)] pr-4 pb-2 box-border">
           <ChatWindow isOpen={isOpen} onClose={() => setIsOpen(false)} />
         </div>
       )}
 
-      {/* BUTTON AREA */}
       <div className="absolute bottom-4 right-4 shrink-0">
         <button
           onClick={toggleOpen}
-          className="w-14 h-14 bg-black hover:bg-gray-800 text-white rounded-full shadow-lg flex items-center justify-center transition-transform duration-200"
+          // UPDATED COLOR HERE: bg-[#154027] (Forest Green)
+          className="w-14 h-14 bg-[#154027] hover:bg-[#1e5736] text-white rounded-full shadow-lg flex items-center justify-center transition-transform duration-200"
         >
           {isOpen ? (
             <span className="text-xl">✕</span> 

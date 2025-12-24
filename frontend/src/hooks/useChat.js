@@ -19,7 +19,7 @@ export const useChat = () => {
         price: 2100,
         description: "A beautiful boho style set.",
         style: "Boho",
-        image_url: "", // Empty to test placeholder, or add a real URL here
+        image_url: "https://koaysilver.com/cdn/shop/files/IMG_7679.jpg?v=1715694380&width=600", // Empty to test placeholder, or add a real URL here
         product_url: "" // Empty to test the auto-generated handle link
       }
     ]

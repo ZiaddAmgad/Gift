@@ -11,7 +11,6 @@ const ChatWindow = ({ isOpen, onClose }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Scroll on load (restore history) and on new messages
   useEffect(() => {
     scrollToBottom();
   }, [messages, loading, isOpen]);
@@ -26,21 +25,20 @@ const ChatWindow = ({ isOpen, onClose }) => {
   return (
     <div className="w-full h-full bg-white rounded-2xl shadow-2xl flex flex-col border border-gray-200 overflow-hidden font-sans">
       
-      {/* 1. HEADER: Fixed Height (shrink-0) */}
-      <div className="bg-black p-4 flex justify-between items-center text-white shadow-md shrink-0 h-16 z-10">
+      {/* HEADER: Updated to Green */}
+      <div className="bg-[#154027] p-4 flex justify-between items-center text-white shadow-md shrink-0 h-16 z-10">
         <div>
           <h3 className="font-bold text-lg leading-none">Fortuna AI</h3>
           <p className="text-xs text-gray-300 opacity-90 mt-1">Gift Concierge</p>
         </div>
         <button 
           onClick={onClose} 
-          className="hover:bg-gray-800 p-1 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
+          className="hover:bg-white/20 p-1 rounded-full w-8 h-8 flex items-center justify-center transition-colors"
         >
           ✕
         </button>
       </div>
 
-      {/* 2. MESSAGES: Takes remaining space, Internal Scroll */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 scrollbar-thin scrollbar-thumb-gray-300 min-h-0">
         {messages.map((msg, idx) => (
           <div key={idx} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -52,10 +50,10 @@ const ChatWindow = ({ isOpen, onClose }) => {
                 ))}
               </div>
             ) : (
-              // --- THE FIX: Added 'whitespace-pre-wrap leading-relaxed' here ---
+              // USER BUBBLE: Updated to Green
               <div className={`max-w-[85%] px-4 py-3 text-sm shadow-sm whitespace-pre-wrap leading-relaxed ${
                 msg.type === 'user' 
-                  ? 'bg-black text-white rounded-2xl rounded-br-none' 
+                  ? 'bg-[#154027] text-white rounded-2xl rounded-br-none' 
                   : 'bg-white border border-gray-100 text-gray-800 rounded-2xl rounded-bl-none'
               }`}>
                 {msg.text}
@@ -77,20 +75,21 @@ const ChatWindow = ({ isOpen, onClose }) => {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* 3. INPUT: Fixed Height (shrink-0) */}
       <form onSubmit={handleSubmit} className="p-3 bg-white border-t border-gray-100 flex gap-2 shadow-sm shrink-0 z-10">
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Describe her style..."
-          className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
+          placeholder="Type your reply..."
+          // INPUT FOCUS: Updated to Green
+          className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-[#154027] focus:ring-1 focus:ring-[#154027] transition-all"
           disabled={loading}
         />
         <button 
           type="submit" 
           disabled={loading || !input.trim()}
-          className="bg-black text-white px-4 py-2 rounded-full hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-sm shadow-sm"
+          // SEND BUTTON: Updated to Green
+          className="bg-[#154027] text-white px-4 py-2 rounded-full hover:bg-[#1e5736] disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-sm shadow-sm"
         >
           Send
         </button>
