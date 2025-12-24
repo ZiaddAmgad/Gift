@@ -1,9 +1,22 @@
 import React from 'react';
 
 const ProductCard = ({ product }) => {
-  // Fallback if product_url isn't in your DB yet. 
-  // It links to a demo page with the ID.
-  const linkUrl = product.product_url || `/products/${product.id}`;
+  
+  // 1. Generate Shopify Handle from Title (if URL missing)
+  // "Tex Flower Set" -> "tex-flower-set"
+  const generateHandle = (title) => {
+    return title
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '') // Remove non-word chars
+      .replace(/[\s_-]+/g, '-') // Replace spaces with dashes
+      .replace(/^-+|-+$/g, ''); // Trim dashes
+  };
+
+  const handle = generateHandle(product.title || "");
+  
+  // Use the live store URL structure
+  const linkUrl = product.product_url || `https://koaysilver.com/products/${handle}`;
 
   return (
     <a 
@@ -19,19 +32,13 @@ const ProductCard = ({ product }) => {
           className="w-full h-full object-cover"
           onError={(e) => {e.target.src = 'https://placehold.co/400x300?text=No+Image'}}
         />
-        {/* Match Score Badge */}
-        {product.score && (
-          <div className="absolute top-2 right-2 bg-white/90 backdrop-blur px-2 py-1 rounded text-xs font-bold text-blue-800 shadow-sm">
-            {Math.round(product.score * 100)}% Match
-          </div>
-        )}
+        {/* Match Score Removed */}
       </div>
       
       <div className="p-4">
         <div className="flex justify-between items-start mb-2">
           <h3 className="font-bold text-gray-800 text-sm line-clamp-2">{product.title}</h3>
           <span className="font-bold text-blue-600 whitespace-nowrap ml-2">
-            {/* EGP Currency Format */}
             {product.price?.toLocaleString()} EGP
           </span>
         </div>
@@ -40,11 +47,7 @@ const ProductCard = ({ product }) => {
           {product.description}
         </p>
         
-        <div className="flex gap-2 text-xs mb-3">
-            <span className="bg-gray-100 px-2 py-1 rounded text-gray-600 uppercase tracking-wide text-[10px]">
-              {product.style}
-            </span>
-        </div>
+        {/* Style Tags Removed */}
 
         <div className="w-full bg-black text-white py-2 rounded text-center text-sm font-medium group-hover:bg-gray-800 transition-colors">
           View Product
