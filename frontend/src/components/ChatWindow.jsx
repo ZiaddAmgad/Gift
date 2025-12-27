@@ -6,6 +6,7 @@ const ChatWindow = ({ isOpen, onClose }) => {
   const { messages, sendMessage, loading } = useChat();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
+  const fileInputRef = useRef(null); // Reference for hidden file input
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -18,14 +19,29 @@ const ChatWindow = ({ isOpen, onClose }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
-    sendMessage(input);
+    sendMessage(input); // Send text only
     setInput('');
+  };
+
+  // Trigger hidden file input
+  const handleIconClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Handle file selection
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      sendMessage(null, file); // Send image
+    }
+    // Reset value so same file can be selected again if needed
+    e.target.value = null; 
   };
 
   return (
     <div className="w-full h-full bg-white rounded-2xl shadow-2xl flex flex-col border border-gray-200 overflow-hidden font-sans">
       
-      {/* HEADER: Updated to Green */}
+      {/* HEADER */}
       <div className="bg-[#154027] p-4 flex justify-between items-center text-white shadow-md shrink-0 h-16 z-10">
         <div>
           <h3 className="font-bold text-lg leading-none">Fortuna AI</h3>
@@ -39,9 +55,10 @@ const ChatWindow = ({ isOpen, onClose }) => {
         </button>
       </div>
 
+      {/* MESSAGES */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 scrollbar-thin scrollbar-thumb-gray-300 min-h-0">
         {messages.map((msg, idx) => (
-          <div key={idx} className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div key={idx} className={`flex ${msg.type === 'user' || msg.type === 'user-image' ? 'justify-end' : 'justify-start'}`}>
             
             {msg.type === 'products' ? (
               <div className="w-full max-w-[95%]">
@@ -49,8 +66,17 @@ const ChatWindow = ({ isOpen, onClose }) => {
                   <ProductCard key={product.id} product={product} />
                 ))}
               </div>
+            ) : msg.type === 'user-image' ? (
+              // IMAGE BUBBLE
+              <div className="max-w-[70%] bg-[#154027] p-2 rounded-2xl rounded-br-none shadow-sm">
+                <img 
+                  src={msg.imageUrl} 
+                  alt="Uploaded" 
+                  className="rounded-lg w-full h-auto object-cover" 
+                />
+              </div>
             ) : (
-              // USER BUBBLE: Updated to Green
+              // TEXT BUBBLE
               <div className={`max-w-[85%] px-4 py-3 text-sm shadow-sm whitespace-pre-wrap leading-relaxed ${
                 msg.type === 'user' 
                   ? 'bg-[#154027] text-white rounded-2xl rounded-br-none' 
@@ -75,20 +101,42 @@ const ChatWindow = ({ isOpen, onClose }) => {
         <div ref={messagesEndRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="p-3 bg-white border-t border-gray-100 flex gap-2 shadow-sm shrink-0 z-10">
+      {/* INPUT AREA */}
+      <form onSubmit={handleSubmit} className="p-3 bg-white border-t border-gray-100 flex gap-2 shadow-sm shrink-0 z-10 items-center">
+        
+        {/* HIDDEN FILE INPUT */}
+        <input 
+          type="file" 
+          accept="image/*" 
+          ref={fileInputRef} 
+          onChange={handleFileChange} 
+          className="hidden" 
+        />
+
+        {/* ATTACHMENT BUTTON */}
+        <button
+          type="button"
+          onClick={handleIconClick}
+          className="text-gray-400 hover:text-[#154027] transition-colors p-2"
+          title="Upload Photo"
+          disabled={loading}
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+          </svg>
+        </button>
+
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Type your reply..."
-          // INPUT FOCUS: Updated to Green
           className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-[#154027] focus:ring-1 focus:ring-[#154027] transition-all"
           disabled={loading}
         />
         <button 
           type="submit" 
           disabled={loading || !input.trim()}
-          // SEND BUTTON: Updated to Green
           className="bg-[#154027] text-white px-4 py-2 rounded-full hover:bg-[#1e5736] disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-sm shadow-sm"
         >
           Send

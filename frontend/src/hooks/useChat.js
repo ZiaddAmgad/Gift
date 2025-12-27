@@ -1,8 +1,32 @@
 import { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 
-// 1 Hour in milliseconds
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; 
+
+// --- HELPER: Compress Image to avoid Vercel 4.5MB limit ---
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 800; // Resize to max 800px width
+        const scaleSize = MAX_WIDTH / img.width;
+        canvas.width = MAX_WIDTH;
+        canvas.height = img.height * scaleSize;
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        
+        // Export as JPEG with 0.7 quality
+        resolve(canvas.toDataURL('image/jpeg', 0.7)); 
+      };
+    };
+  });
+};
 
 export const useChat = () => {
   const initialMessage = { 
@@ -14,11 +38,9 @@ export const useChat = () => {
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
 
-  // 1. ON LOAD: Check if we have valid history
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
-    // A. Setup Session ID (Never expires, identifies the user)
     let storedId = localStorage.getItem('chat_session_id');
     if (!storedId) {
       storedId = uuidv4();
@@ -26,61 +48,81 @@ export const useChat = () => {
     }
     setSessionId(storedId);
 
-    // B. Check Chat History (Expires after 1 hour of inactivity)
     const savedString = localStorage.getItem('chat_history');
     if (savedString) {
       try {
         const saved = JSON.parse(savedString);
-        const now = Date.now();
-        
-        // Calculate how long since the last message was saved
-        const timeSinceLastMessage = now - saved.timestamp;
-
-        if (timeSinceLastMessage < IDLE_TIMEOUT_MS) {
-          // STILL FRESH: Restore the chat
+        if ((Date.now() - saved.timestamp) < IDLE_TIMEOUT_MS) {
           setMessages(saved.data);
         } else {
-          // EXPIRED: Delete only this chat history
-          console.log("Session expired. Clearing chat history.");
           localStorage.removeItem('chat_history');
         }
       } catch (e) {
-        console.error("Error parsing chat history:", e);
         localStorage.removeItem('chat_history');
       }
     }
   }, []);
 
-  // 2. ON UPDATE: Save history and RESET the timer
   useEffect(() => {
-    // Only save if we have more than just the greeting
     if (messages.length > 1) {
       const payload = JSON.stringify({
-        timestamp: Date.now(), // <--- This resets the 1-hour timer every time a message is added
+        timestamp: Date.now(),
         data: messages
       });
       localStorage.setItem('chat_history', payload);
     }
   }, [messages]);
 
-  // 3. Send Logic
-  const sendMessage = useCallback(async (text) => {
-    if (!text || !text.trim()) return;
+  // Updated sendMessage to accept imageFile
+  const sendMessage = useCallback(async (text, imageFile = null) => {
+    if ((!text || !text.trim()) && !imageFile) return;
 
-    const newUserMsg = { type: 'user', text };
-    const newHistory = [...messages, newUserMsg];
-    setMessages(newHistory);
     setLoading(true);
+    let newUserMsg;
+    let base64Image = null;
+
+    // 1. Handle UI Update & Compression
+    if (imageFile) {
+      base64Image = await compressImage(imageFile);
+      newUserMsg = { type: 'user-image', imageUrl: base64Image };
+    } else {
+      newUserMsg = { type: 'user', text };
+    }
+
+    // Add to local state immediately
+    setMessages(prev => [...prev, newUserMsg]);
 
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
       
-      const apiHistory = newHistory
-        .filter(msg => msg.type === 'user' || msg.type === 'bot')
-        .map(msg => ({
-          role: msg.type === 'user' ? 'user' : 'assistant',
-          content: msg.text || "" 
-        }));
+      // 2. Prepare History for Backend
+      // We take the existing state + the new message we just created
+      const currentHistory = [...messages, newUserMsg];
+
+      const apiHistory = currentHistory
+        .filter(msg => msg.type === 'user' || msg.type === 'bot' || msg.type === 'user-image')
+        .map((msg, index) => {
+          // If it's the LAST message (the one we just sent) AND it has an image, send the base64
+          if (index === currentHistory.length - 1 && msg.type === 'user-image') {
+            return {
+              role: 'user',
+              content: "Image uploaded", // Fallback content
+              image: msg.imageUrl // Send Base64 only for the new message
+            };
+          }
+          
+          // For PAST messages, do NOT resend the image data (saves bandwidth)
+          // The backend memory should have already extracted tags from it.
+          if (msg.type === 'user-image') {
+            return { role: 'user', content: "[User sent an image]" };
+          }
+
+          // Standard Text
+          return {
+            role: msg.type === 'user' ? 'user' : 'assistant',
+            content: msg.text || "" 
+          };
+        });
 
       const response = await fetch(`${API_BASE}/api/chat/message`, {
         method: 'POST',
@@ -89,21 +131,17 @@ export const useChat = () => {
       });
 
       const data = await response.json();
-      setLoading(false); // Stop loading indicator before showing bubbles
+      setLoading(false); 
 
-      // Handle Text Bubbles with "Inter-Bubble Loading"
       if (data.text_bubbles && Array.isArray(data.text_bubbles)) {
         for (let i = 0; i < data.text_bubbles.length; i++) {
           const bubbleText = data.text_bubbles[i];
-
-          // Add the current bubble
           setMessages(prev => [...prev, { type: 'bot', text: bubbleText }]);
           
-          // Check if there are MORE bubbles coming after this one
           if (i < data.text_bubbles.length - 1) {
-            setLoading(true); // Show "Typing..."
-            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s
-            setLoading(false); // Hide "Typing..." to show the next message
+            setLoading(true); 
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            setLoading(false);
           }
         }
       } 
@@ -111,9 +149,7 @@ export const useChat = () => {
         setMessages(prev => [...prev, { type: 'bot', text: data.message }]);
       }
 
-      // Show Products (if any)
       if (data.products && data.products.length > 0) {
-        // Optional: Small delay before products appear for better pacing
         if (data.text_bubbles?.length > 0) {
             setLoading(true);
             await new Promise(resolve => setTimeout(resolve, 1000));
