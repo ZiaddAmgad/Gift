@@ -3,10 +3,11 @@ import { useChat } from '../hooks/useChat';
 import ProductCard from './ProductCard';
 
 const ChatWindow = ({ isOpen, onClose }) => {
-  const { messages, sendMessage, loading } = useChat();
+  // Destructure allowImage
+  const { messages, sendMessage, loading, allowImage } = useChat();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
-  const fileInputRef = useRef(null); // Reference for hidden file input
+  const fileInputRef = useRef(null); 
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -19,22 +20,19 @@ const ChatWindow = ({ isOpen, onClose }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!input.trim()) return;
-    sendMessage(input); // Send text only
+    sendMessage(input); 
     setInput('');
   };
 
-  // Trigger hidden file input
   const handleIconClick = () => {
     fileInputRef.current?.click();
   };
 
-  // Handle file selection
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      sendMessage(null, file); // Send image
+      sendMessage(null, file); 
     }
-    // Reset value so same file can be selected again if needed
     e.target.value = null; 
   };
 
@@ -67,7 +65,6 @@ const ChatWindow = ({ isOpen, onClose }) => {
                 ))}
               </div>
             ) : msg.type === 'user-image' ? (
-              // IMAGE BUBBLE
               <div className="max-w-[70%] bg-[#154027] p-2 rounded-2xl rounded-br-none shadow-sm">
                 <img 
                   src={msg.imageUrl} 
@@ -76,7 +73,6 @@ const ChatWindow = ({ isOpen, onClose }) => {
                 />
               </div>
             ) : (
-              // TEXT BUBBLE
               <div className={`max-w-[85%] px-4 py-3 text-sm shadow-sm whitespace-pre-wrap leading-relaxed ${
                 msg.type === 'user' 
                   ? 'bg-[#154027] text-white rounded-2xl rounded-br-none' 
@@ -113,18 +109,20 @@ const ChatWindow = ({ isOpen, onClose }) => {
           className="hidden" 
         />
 
-        {/* ATTACHMENT BUTTON */}
-        <button
-          type="button"
-          onClick={handleIconClick}
-          className="text-gray-400 hover:text-[#154027] transition-colors p-2"
-          title="Upload Photo"
-          disabled={loading}
-        >
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-          </svg>
-        </button>
+        {/* ATTACHMENT BUTTON (CONDITIONAL) */}
+        {allowImage && (
+          <button
+            type="button"
+            onClick={handleIconClick}
+            className="text-gray-400 hover:text-[#154027] transition-colors p-2 animate-fade-in"
+            title="Upload Photo"
+            disabled={loading}
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+          </button>
+        )}
 
         <input
           type="text"

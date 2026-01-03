@@ -1,6 +1,5 @@
 import os
 import json
-import re
 import google.generativeai as genai
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -16,13 +15,13 @@ if not os.getenv("GOOGLE_API_KEY"):
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-# 1. Text Chat Model (The Conversationalist)
+# 1. Text Chat Model
 text_model = genai.GenerativeModel(
     'models/gemini-2.5-flash',
     generation_config={"response_mime_type": "application/json"}
 )
 
-# 2. Vision Model (The Stylist) - SEPARATE INSTANCE
+# 2. Vision Model
 vision_model = genai.GenerativeModel(
     'models/gemini-2.5-flash',
     generation_config={"response_mime_type": "application/json"}
@@ -32,7 +31,7 @@ vision_model = genai.GenerativeModel(
 class Message(BaseModel):
     role: str
     content: str
-    image: Optional[str] = None # Base64 Image String
+    image: Optional[str] = None 
 
 class ChatRequest(BaseModel):
     messages: List[Message]
@@ -40,8 +39,9 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     text_bubbles: List[str]
     products: Optional[List[dict]] = []
+    allow_image: Optional[bool] = False # <--- NEW FLAG
 
-# --- 1. VISION SYSTEM PROMPT (Strict Tagging + Friendly Voice) ---
+# --- 1. VISION SYSTEM PROMPT ---
 VISION_PROMPT = """
 You are an expert Jewelry Stylist. Analyze this image to find the perfect gift.
 
@@ -49,11 +49,8 @@ You are an expert Jewelry Stylist. Analyze this image to find the perfect gift.
 1. Analyze the woman's Skin Tone, Style, and probable Material preferences.
 2. EXTRACT tags strictly from the lists below.
 3. GENERATE a 'friendly_reply' that sounds warm and personal, NOT technical.
-   - Bad: "Detected Boho style and Warm tone."
-   - Good: "I see she has a lovely warm glow and seems to love natural, free-spirited looks."
-   - Avoid jargon like "Industrial" or "Art Deco" in the reply; use descriptive words instead.
 
-**STRICT TAG OPTIONS (Choose closest matches):**
+**STRICT TAG OPTIONS:**
 - Material: "Gold, Silver, Rose Gold, White Gold, Gold Plated, Sterling Silver, Platinum, Enamel, Leather, Cord, Pearl, Beaded, Mixed"
 - Style: "Minimalist, Boho, Vintage, Bold, Statement, Art Deco, Modern, Classic, Romantic, Geometric, Nature, Dainty, Industrial, Traditional, Trendy"
 - Gemstone: "Diamond, Zircon, Pearl, Turquoise, Onyx, Crystal, Emerald, Ruby, Sapphire, None"
@@ -70,7 +67,7 @@ You are an expert Jewelry Stylist. Analyze this image to find the perfect gift.
 }
 """
 
-# --- 2. TEXT SYSTEM PROMPT (The Concierge) ---
+# --- 2. TEXT SYSTEM PROMPT ---
 SYSTEM_PROMPT = """
 You are "Fortuna", a warm, expert Jewelry Concierge.
 Your Goal: Help the user find a gift using a specific conversation flow.
@@ -84,11 +81,13 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 3. **Occasion Reaction:** 
    - Once Occasion is specific, REACT with empathy.
 4. **The Image Offer (New Step):**
-   - Once Recipient and Occasion are known, ask: "If you want, you can share a photo that shows her style or we can just keep chatting. Totally up to you"
-   - If they say yes/upload -> The Vision Model takes over.
+   - After reacting, ask: "If you want, you can share a photo that shows her style or we can just keep chatting. Totally up to you"
+   - **CRITICAL:** Set "allow_image": true in the JSON response for this step ONLY.
+   - If they say yes/upload -> Vision Model takes over.
    - If they say no -> Continue to Material question below.
 5. **Material Question (If no image):** 
    - Ask: "To help me narrow it down, does she usually prefer **Gold or Silver**? (It's completely okay to say you're not sure!)"
+   - "allow_image": false
 6. **The Style Menu (Vibe Check):**
    - Once Material is known, ask for Style.
    - **FORMATTING:** Return this as ONE bubble. Use '\\n' to separate lines.
@@ -158,6 +157,7 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 --- OUTPUT FORMAT (JSON) ---
 {
     "reply_bubbles": ["String 1", "String 2"],
+    "allow_image": boolean, 
     "search_params": {
         "ready_to_search": boolean,
         "recipient_tags": "...",
@@ -180,33 +180,27 @@ async def chat_endpoint(request: ChatRequest):
         if last_msg.image:
             print("📸 Image detected. Switching to Vision Model.")
             
-            # Clean Base64 string (Remove "data:image/jpeg;base64," prefix)
             image_data = last_msg.image
             if "base64," in image_data:
                 image_data = image_data.split("base64,")[1]
             
-            # Prepare Image Blob for Gemini
             image_part = {
                 "mime_type": "image/jpeg", 
                 "data": image_data
             }
 
-            # Call Vision Model
             response = await vision_model.generate_content_async([VISION_PROMPT, image_part])
             
             try:
                 vision_data = json.loads(response.text)
                 
-                # Extract Tags & Friendly Reply
                 friendly_reply = vision_data.get("friendly_reply", "That's a beautiful photo! I see exactly what might suit her.")
                 search_query_tags = f"{vision_data.get('style','')} {vision_data.get('material','')} {vision_data.get('gemstone','')} {vision_data.get('occasion','')} {vision_data.get('skin_tone','')}"
                 
-                # Perform Immediate Search
                 print(f"🔎 Vision Search Query: {search_query_tags}")
-                products = search_products(query_text=search_query_tags, top_k=5)
                 
-                # Return 'Hero' Product (Top 1)
-                hero_product = products[:1] if products else []
+                raw_results = search_products(query_text=search_query_tags, top_k=5)
+                hero_product = raw_results[:1] if raw_results else []
                 
                 if not hero_product:
                     friendly_reply += " I looked through our collection and these popular pieces seem closest to that style."
@@ -216,20 +210,20 @@ async def chat_endpoint(request: ChatRequest):
 
                 return ChatResponse(
                     text_bubbles=[friendly_reply],
-                    products=hero_product
+                    products=hero_product,
+                    allow_image=False # Hide button after upload
                 )
 
             except Exception as e:
                 print(f"❌ Vision Processing Error: {e}")
-                return ChatResponse(text_bubbles=["I had a little trouble analyzing that specific photo. Could you tell me a bit about her style instead?"])
+                return ChatResponse(text_bubbles=["I had a little trouble analyzing that specific photo. Could you tell me a bit about her style using text instead?"])
 
-        # --- PATH B: TEXT LOGIC (Standard Flow) ---
+        # --- PATH B: TEXT LOGIC (Standard Chat) ---
         else:
             recent_messages = request.messages[-15:]
             conversation_text = ""
             for msg in recent_messages:
                 role_label = "User" if msg.role == "user" else "Assistant"
-                # If a past message was an image, we just note it in text
                 content = msg.content if msg.content else "[User sent an Image]"
                 conversation_text += f"{role_label}: {content}\n"
 
@@ -244,6 +238,9 @@ async def chat_endpoint(request: ChatRequest):
             bubbles = ai_data.get("reply_bubbles", [])
             if not bubbles: bubbles = ["Let me check on that for you."]
             
+            # --- EXTRACT ALLOW_IMAGE FLAG ---
+            allow_img = ai_data.get("allow_image", False)
+
             params = ai_data.get("search_params", {})
             products = []
 
@@ -271,7 +268,11 @@ async def chat_endpoint(request: ChatRequest):
                     bubbles.append("I couldn't find an exact match, but here are our most popular pieces.")
                     products = search_products(query_text="Best seller", top_k=3)
 
-            return ChatResponse(text_bubbles=bubbles, products=products)
+            return ChatResponse(
+                text_bubbles=bubbles, 
+                products=products,
+                allow_image=allow_img # Send flag to frontend
+            )
 
     except Exception as e:
         print(f"❌ API Error: {str(e)}")

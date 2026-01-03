@@ -3,7 +3,6 @@ import { v4 as uuidv4 } from 'uuid';
 
 const IDLE_TIMEOUT_MS = 60 * 60 * 1000; 
 
-// --- HELPER: Compress Image to avoid Vercel 4.5MB limit ---
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -13,7 +12,7 @@ const compressImage = (file) => {
       img.src = event.target.result;
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; // Resize to max 800px width
+        const MAX_WIDTH = 800; 
         const scaleSize = MAX_WIDTH / img.width;
         canvas.width = MAX_WIDTH;
         canvas.height = img.height * scaleSize;
@@ -21,7 +20,6 @@ const compressImage = (file) => {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         
-        // Export as JPEG with 0.7 quality
         resolve(canvas.toDataURL('image/jpeg', 0.7)); 
       };
     };
@@ -37,6 +35,9 @@ export const useChat = () => {
   const [messages, setMessages] = useState([initialMessage]);
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
+  
+  // --- NEW STATE: Controls visibility of the paperclip ---
+  const [allowImage, setAllowImage] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -73,7 +74,6 @@ export const useChat = () => {
     }
   }, [messages]);
 
-  // Updated sendMessage to accept imageFile
   const sendMessage = useCallback(async (text, imageFile = null) => {
     if ((!text || !text.trim()) && !imageFile) return;
 
@@ -81,7 +81,6 @@ export const useChat = () => {
     let newUserMsg;
     let base64Image = null;
 
-    // 1. Handle UI Update & Compression
     if (imageFile) {
       base64Image = await compressImage(imageFile);
       newUserMsg = { type: 'user-image', imageUrl: base64Image };
@@ -89,35 +88,28 @@ export const useChat = () => {
       newUserMsg = { type: 'user', text };
     }
 
-    // Add to local state immediately
     setMessages(prev => [...prev, newUserMsg]);
 
     try {
       const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
       
-      // 2. Prepare History for Backend
-      // We take the existing state + the new message we just created
       const currentHistory = [...messages, newUserMsg];
 
       const apiHistory = currentHistory
         .filter(msg => msg.type === 'user' || msg.type === 'bot' || msg.type === 'user-image')
         .map((msg, index) => {
-          // If it's the LAST message (the one we just sent) AND it has an image, send the base64
           if (index === currentHistory.length - 1 && msg.type === 'user-image') {
             return {
               role: 'user',
-              content: "Image uploaded", // Fallback content
-              image: msg.imageUrl // Send Base64 only for the new message
+              content: "Image uploaded", 
+              image: msg.imageUrl 
             };
           }
           
-          // For PAST messages, do NOT resend the image data (saves bandwidth)
-          // The backend memory should have already extracted tags from it.
           if (msg.type === 'user-image') {
             return { role: 'user', content: "[User sent an image]" };
           }
 
-          // Standard Text
           return {
             role: msg.type === 'user' ? 'user' : 'assistant',
             content: msg.text || "" 
@@ -132,6 +124,10 @@ export const useChat = () => {
 
       const data = await response.json();
       setLoading(false); 
+      
+      // --- UPDATE ALLOW IMAGE STATE ---
+      // If the backend says true, show button. If false/undefined, hide it.
+      setAllowImage(data.allow_image || false);
 
       if (data.text_bubbles && Array.isArray(data.text_bubbles)) {
         for (let i = 0; i < data.text_bubbles.length; i++) {
@@ -165,7 +161,8 @@ export const useChat = () => {
     }
   }, [messages]); 
 
-  return { messages, sendMessage, loading };
+  // Expose allowImage to the component
+  return { messages, sendMessage, loading, allowImage };
 };
 
 export default useChat;
