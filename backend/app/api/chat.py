@@ -39,16 +39,19 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     text_bubbles: List[str]
     products: Optional[List[dict]] = []
-    allow_image: Optional[bool] = False 
+    allow_image: Optional[bool] = False
+    chat_ended: Optional[bool] = False # <--- NEW FLAG
 
-# --- 1. VISION SYSTEM PROMPT ---
+# --- 1. VISION SYSTEM PROMPT (Tighter) ---
 VISION_PROMPT = """
 You are an expert Jewelry Stylist. Analyze this image to find the perfect gift.
 
 **TASK:**
 1. Analyze the woman's Skin Tone, Style, and probable Material preferences.
 2. EXTRACT tags strictly from the lists below.
-3. GENERATE a 'friendly_reply' that is warm but CONCISE (Max 3 sentences).
+3. GENERATE a 'friendly_reply' that is extremely concise (Max 2 short sentences).
+   - Focus only on the key style match.
+   - Example: "Her warm tone glows with gold, and that blazer screams classic chic. I've picked sophisticated pieces to match."
 
 **STRICT TAG OPTIONS:**
 - Material: "Gold, Silver, Rose Gold, White Gold, Gold Plated, Sterling Silver, Platinum, Enamel, Leather, Cord, Pearl, Beaded, Mixed"
@@ -67,7 +70,7 @@ You are an expert Jewelry Stylist. Analyze this image to find the perfect gift.
 }
 """
 
-# --- 2. TEXT SYSTEM PROMPT (UPDATED: 4 Products + Stop) ---
+# --- 2. TEXT SYSTEM PROMPT (Ends Chat) ---
 SYSTEM_PROMPT = """
 You are "Fortuna", a warm, expert Jewelry Concierge.
 Your Goal: Help the user find a gift using a specific conversation flow.
@@ -110,7 +113,7 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
    - If Recipient + Occasion + Material + Style are known -> SEARCH.
    - Return **4 products** immediately.
    - Text Reply: "Here are 4 beautiful options that match her style perfectly. I hope you find the perfect gift!"
-   - Do NOT ask a follow-up question. The goal is to show products and finish.
+   - **CRITICAL:** Set "chat_ended": true.
 
 --- STYLE DEFINITIONS ---
 (A) Simple & Clean: She likes things neat and calm. Not too many colors or stuff.
@@ -155,6 +158,7 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 {
     "reply_bubbles": ["String 1", "String 2"],
     "allow_image": boolean, 
+    "chat_ended": boolean,
     "search_params": {
         "ready_to_search": boolean,
         "recipient_tags": "...",
@@ -195,10 +199,7 @@ async def chat_endpoint(request: ChatRequest):
                 
                 print(f"🔎 Vision Search Query: {search_query_tags}")
                 
-                # Fetch 6, Return 4
                 raw_results = search_products(query_text=search_query_tags, top_k=6)
-                
-                # Return 4 Products immediately
                 final_products = raw_results[:4] if raw_results else []
                 
                 if not final_products:
@@ -210,7 +211,8 @@ async def chat_endpoint(request: ChatRequest):
                 return ChatResponse(
                     text_bubbles=[friendly_reply],
                     products=final_products,
-                    allow_image=False 
+                    allow_image=False,
+                    chat_ended=True # End chat after vision search
                 )
 
             except Exception as e:
@@ -238,6 +240,7 @@ async def chat_endpoint(request: ChatRequest):
             if not bubbles: bubbles = ["Let me check on that for you."]
             
             allow_img = ai_data.get("allow_image", False)
+            chat_ended = ai_data.get("chat_ended", False)
 
             params = ai_data.get("search_params", {})
             products = []
@@ -252,10 +255,9 @@ async def chat_endpoint(request: ChatRequest):
                 ]
                 
                 query = " ".join([p for p in query_parts if p]).strip()
-                count = params.get("product_count", 4) # Default to 4
+                count = params.get("product_count", 4)
                 print(f"🔎 Text Search Query: {query} (Requesting: {count})")
                 
-                # Search for 6, return 4 to ensure quality
                 raw_results = search_products(query_text=query, top_k=6)
                 
                 if raw_results:
@@ -267,7 +269,8 @@ async def chat_endpoint(request: ChatRequest):
             return ChatResponse(
                 text_bubbles=bubbles, 
                 products=products,
-                allow_image=allow_img 
+                allow_image=allow_img,
+                chat_ended=chat_ended
             )
 
     except Exception as e:

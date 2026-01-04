@@ -35,9 +35,10 @@ export const useChat = () => {
   const [messages, setMessages] = useState([initialMessage]);
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
-  
-  // --- NEW STATE: Controls visibility of the paperclip ---
   const [allowImage, setAllowImage] = useState(false);
+  
+  // --- NEW STATE ---
+  const [chatEnded, setChatEnded] = useState(false);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -125,9 +126,12 @@ export const useChat = () => {
       const data = await response.json();
       setLoading(false); 
       
-      // --- UPDATE ALLOW IMAGE STATE ---
-      // If the backend says true, show button. If false/undefined, hide it.
       setAllowImage(data.allow_image || false);
+      
+      // --- END CHAT LOGIC ---
+      if (data.chat_ended) {
+        setChatEnded(true);
+      }
 
       if (data.text_bubbles && Array.isArray(data.text_bubbles)) {
         for (let i = 0; i < data.text_bubbles.length; i++) {
@@ -146,9 +150,11 @@ export const useChat = () => {
       }
 
       if (data.products && data.products.length > 0) {
+        // --- ADDED DELAY FOR PRODUCTS ---
+        // Wait 3s so user can read the text response first
         if (data.text_bubbles?.length > 0) {
             setLoading(true);
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 3000));
             setLoading(false);
         }
         setMessages(prev => [...prev, { type: 'products', items: data.products }]);
@@ -161,8 +167,8 @@ export const useChat = () => {
     }
   }, [messages]); 
 
-  // Expose allowImage to the component
-  return { messages, sendMessage, loading, allowImage };
+  // Expose chatEnded to the component
+  return { messages, sendMessage, loading, allowImage, chatEnded };
 };
 
 export default useChat;
