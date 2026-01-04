@@ -5,16 +5,16 @@ const ChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
+  // --- FIXED: Removed Auto-Open Logic ---
+  // We only set isLoaded to true, we DO NOT force isOpen to true based on storage.
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      const savedState = localStorage.getItem('widget_is_open');
-      if (savedState === 'true') {
-        setIsOpen(true);
-      }
       setIsLoaded(true);
     }
   }, []);
 
+  // We still SAVE the state if they open it, just for session consistency,
+  // but we don't restore it on a fresh reload to be less invasive.
   useEffect(() => {
     if (!isLoaded) return;
     const message = isOpen ? "chat-opened" : "chat-closed";
@@ -40,7 +40,7 @@ const ChatWidget = () => {
       <div className="absolute bottom-4 right-4 shrink-0">
         <button
           onClick={toggleOpen}
-          // UPDATED COLOR HERE: bg-[#154027] (Forest Green)
+          // Forest Green
           className="w-14 h-14 bg-[#154027] hover:bg-[#1e5736] text-white rounded-full shadow-lg flex items-center justify-center transition-transform duration-200"
         >
           {isOpen ? (

@@ -39,7 +39,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     text_bubbles: List[str]
     products: Optional[List[dict]] = []
-    allow_image: Optional[bool] = False # <--- NEW FLAG
+    allow_image: Optional[bool] = False 
 
 # --- 1. VISION SYSTEM PROMPT ---
 VISION_PROMPT = """
@@ -48,7 +48,7 @@ You are an expert Jewelry Stylist. Analyze this image to find the perfect gift.
 **TASK:**
 1. Analyze the woman's Skin Tone, Style, and probable Material preferences.
 2. EXTRACT tags strictly from the lists below.
-3. GENERATE a 'friendly_reply' that sounds warm and personal, NOT technical.
+3. GENERATE a 'friendly_reply' that is warm but CONCISE (Max 3 sentences).
 
 **STRICT TAG OPTIONS:**
 - Material: "Gold, Silver, Rose Gold, White Gold, Gold Plated, Sterling Silver, Platinum, Enamel, Leather, Cord, Pearl, Beaded, Mixed"
@@ -67,7 +67,7 @@ You are an expert Jewelry Stylist. Analyze this image to find the perfect gift.
 }
 """
 
-# --- 2. TEXT SYSTEM PROMPT ---
+# --- 2. TEXT SYSTEM PROMPT (UPDATED: 4 Products + Stop) ---
 SYSTEM_PROMPT = """
 You are "Fortuna", a warm, expert Jewelry Concierge.
 Your Goal: Help the user find a gift using a specific conversation flow.
@@ -106,14 +106,11 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
    - Bubble 2: "(C) Artistic & Nature-Loving: ... \\n\\n(D) Classic & Elegant: ..."
    - Bubble 3: "(E) Cozy & Comfortable: ... \\n\\n(F) Trendy & Fashionable: ..."
    - Use the definitions below.
-8. **The "Hero" Search:**
+8. **Final Recommendations (The End):**
    - If Recipient + Occasion + Material + Style are known -> SEARCH.
-   - Return ONLY the #1 best matching product initially.
-9. **Iteration:**
-   - If user says "Show more", "Different", or "Don't like it":
-     1. Set `ready_to_search` = true.
-     2. Set `product_count` = 3.
-     3. **IMPORTANT:** You MUST reuse the EXACT SAME tags (`recipient_tags`, `style_tags`, etc.) from the previous successful search. Do not reset them.
+   - Return **4 products** immediately.
+   - Text Reply: "Here are 4 beautiful options that match her style perfectly. I hope you find the perfect gift!"
+   - Do NOT ask a follow-up question. The goal is to show products and finish.
 
 --- STYLE DEFINITIONS ---
 (A) Simple & Clean: She likes things neat and calm. Not too many colors or stuff.
@@ -165,7 +162,7 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
         "material_tags": "...",
         "style_tags": "...",
         "gemstone_tags": "...",
-        "product_count": 1 
+        "product_count": 4 
     }
 }
 """
@@ -173,10 +170,9 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 @router.post("/message", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
-        # 1. Check for Image in the LAST message
         last_msg = request.messages[-1]
         
-        # --- PATH A: VISION LOGIC (User sent a photo) ---
+        # --- PATH A: VISION LOGIC ---
         if last_msg.image:
             print("📸 Image detected. Switching to Vision Model.")
             
@@ -199,26 +195,29 @@ async def chat_endpoint(request: ChatRequest):
                 
                 print(f"🔎 Vision Search Query: {search_query_tags}")
                 
-                raw_results = search_products(query_text=search_query_tags, top_k=5)
-                hero_product = raw_results[:1] if raw_results else []
+                # Fetch 6, Return 4
+                raw_results = search_products(query_text=search_query_tags, top_k=6)
                 
-                if not hero_product:
+                # Return 4 Products immediately
+                final_products = raw_results[:4] if raw_results else []
+                
+                if not final_products:
                     friendly_reply += " I looked through our collection and these popular pieces seem closest to that style."
-                    hero_product = search_products("Best seller", top_k=3)
+                    final_products = search_products("Best seller", top_k=4)
                 else:
-                    friendly_reply += " Based on that, I think this piece would be perfect."
+                    friendly_reply += " Based on that, here are 4 beautiful options."
 
                 return ChatResponse(
                     text_bubbles=[friendly_reply],
-                    products=hero_product,
-                    allow_image=False # Hide button after upload
+                    products=final_products,
+                    allow_image=False 
                 )
 
             except Exception as e:
                 print(f"❌ Vision Processing Error: {e}")
                 return ChatResponse(text_bubbles=["I had a little trouble analyzing that specific photo. Could you tell me a bit about her style using text instead?"])
 
-        # --- PATH B: TEXT LOGIC (Standard Chat) ---
+        # --- PATH B: TEXT LOGIC ---
         else:
             recent_messages = request.messages[-15:]
             conversation_text = ""
@@ -238,7 +237,6 @@ async def chat_endpoint(request: ChatRequest):
             bubbles = ai_data.get("reply_bubbles", [])
             if not bubbles: bubbles = ["Let me check on that for you."]
             
-            # --- EXTRACT ALLOW_IMAGE FLAG ---
             allow_img = ai_data.get("allow_image", False)
 
             params = ai_data.get("search_params", {})
@@ -254,24 +252,22 @@ async def chat_endpoint(request: ChatRequest):
                 ]
                 
                 query = " ".join([p for p in query_parts if p]).strip()
-                count = params.get("product_count", 1)
+                count = params.get("product_count", 4) # Default to 4
                 print(f"🔎 Text Search Query: {query} (Requesting: {count})")
                 
-                raw_results = search_products(query_text=query, top_k=5)
+                # Search for 6, return 4 to ensure quality
+                raw_results = search_products(query_text=query, top_k=6)
                 
                 if raw_results:
-                    if count == 1:
-                        products = raw_results[:1]
-                    elif count == 3:
-                        products = raw_results[1:4]
+                    products = raw_results[:4]
                 else:
                     bubbles.append("I couldn't find an exact match, but here are our most popular pieces.")
-                    products = search_products(query_text="Best seller", top_k=3)
+                    products = search_products(query_text="Best seller", top_k=4)
 
             return ChatResponse(
                 text_bubbles=bubbles, 
                 products=products,
-                allow_image=allow_img # Send flag to frontend
+                allow_image=allow_img 
             )
 
     except Exception as e:
