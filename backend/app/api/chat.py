@@ -26,8 +26,8 @@ vision_model = genai.GenerativeModel(
 )
 
 # --- 🛡️ SECURITY CONSTANTS ---
-MAX_TEXT_LENGTH = 200  # Truncate after 200 characters
-MAX_IMAGE_SIZE_B64 = 1_500_000 # ~1MB Limit (Frontend sends ~150KB, this is generous buffer)
+MAX_TEXT_LENGTH = 200 
+MAX_IMAGE_SIZE_B64 = 1_500_000 
 
 # --- DATA MODELS ---
 class Message(BaseModel):
@@ -35,14 +35,12 @@ class Message(BaseModel):
     content: str
     image: Optional[str] = None 
 
-    # 🛡️ VALIDATOR: Truncate long text
     @validator('content')
     def validate_content_length(cls, v):
         if len(v) > MAX_TEXT_LENGTH:
             return v[:MAX_TEXT_LENGTH] + "..."
         return v
 
-    # 🛡️ VALIDATOR: Reject massive images (Bandwidth Protection)
     @validator('image')
     def validate_image_size(cls, v):
         if v and len(v) > MAX_IMAGE_SIZE_B64:
@@ -58,13 +56,13 @@ class ChatResponse(BaseModel):
     allow_image: Optional[bool] = False
     chat_ended: Optional[bool] = False
 
-# --- 1. VISION SYSTEM PROMPT (Strict Validation) ---
+# --- 1. VISION SYSTEM PROMPT ---
 VISION_PROMPT = """
 You are an expert Jewelry Stylist.
 
 **TASK:**
 1. Check if the image contains a woman/girl or clear jewelry style reference. 
-   - If NO person/style (e.g. cat, landscape, blank): Set "valid_image": false. STOP there.
+   - If NO person/style (e.g. cat, landscape, blank, random object): Set "valid_image": false. STOP there.
 2. If valid, analyze Skin Tone, Style, and probable Material preferences.
 3. EXTRACT tags strictly from the lists below.
 4. GENERATE a 'friendly_reply' that is extremely concise (Max 2 short sentences).
@@ -211,10 +209,10 @@ async def chat_endpoint(request: ChatRequest):
             try:
                 vision_data = json.loads(response.text)
                 
-                # --- CHECK IF IMAGE IS VALID (Contains Person) ---
+                # --- CHECK IF IMAGE IS VALID (Contains Person/Style) ---
                 if not vision_data.get("valid_image", True):
-                    # Check how many times they failed (Naive check: scan history for "Image uploaded")
-                    failed_attempts = sum(1 for m in request.messages if m.content == "Image uploaded")
+                    # FIX: Count both "Image uploaded" (current) AND "[User sent an image]" (past history)
+                    failed_attempts = sum(1 for m in request.messages if m.content in ["Image uploaded", "[User sent an image]"])
                     
                     if failed_attempts < 2:
                         return ChatResponse(
