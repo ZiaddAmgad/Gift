@@ -3,7 +3,6 @@ import { useChat } from '../hooks/useChat';
 import ProductCard from './ProductCard';
 
 const ChatWindow = ({ isOpen, onClose }) => {
-  // Destructure chatEnded
   const { messages, sendMessage, loading, allowImage, chatEnded } = useChat();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -109,7 +108,7 @@ const ChatWindow = ({ isOpen, onClose }) => {
           className="hidden" 
         />
 
-        {/* ATTACHMENT BUTTON (CONDITIONAL & DISABLED IF CHAT ENDED) */}
+        {/* ATTACHMENT BUTTON */}
         {allowImage && !chatEnded && (
           <button
             type="button"
@@ -129,12 +128,14 @@ const ChatWindow = ({ isOpen, onClose }) => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={chatEnded ? "Conversation ended." : "Type your reply..."}
+          // --- CHANGE HERE: Added maxLength ---
+          maxLength={200}
           className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-[#154027] focus:ring-1 focus:ring-[#154027] transition-all disabled:bg-gray-100 disabled:text-gray-500"
-          disabled={loading || chatEnded} // Disable on end
+          disabled={loading || chatEnded} 
         />
         <button 
           type="submit" 
-          disabled={loading || !input.trim() || chatEnded} // Disable on end
+          disabled={loading || !input.trim() || chatEnded} 
           className="bg-[#154027] text-white px-4 py-2 rounded-full hover:bg-[#1e5736] disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-sm shadow-sm"
         >
           Send

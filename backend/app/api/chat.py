@@ -2,7 +2,7 @@ import os
 import json
 import google.generativeai as genai
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from typing import List, Optional, Dict, Any
 
 from app.core.rag import search_products
@@ -15,23 +15,39 @@ if not os.getenv("GOOGLE_API_KEY"):
 
 genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-# 1. Text Chat Model
 text_model = genai.GenerativeModel(
     'models/gemini-2.5-flash',
     generation_config={"response_mime_type": "application/json"}
 )
 
-# 2. Vision Model
 vision_model = genai.GenerativeModel(
     'models/gemini-2.5-flash',
     generation_config={"response_mime_type": "application/json"}
 )
+
+# --- 🛡️ SECURITY CONSTANTS ---
+MAX_TEXT_LENGTH = 200  # Truncate after 200 characters
+MAX_IMAGE_SIZE_B64 = 1_500_000 # ~1MB Limit (Frontend sends ~150KB, this is generous buffer)
 
 # --- DATA MODELS ---
 class Message(BaseModel):
     role: str
     content: str
     image: Optional[str] = None 
+
+    # 🛡️ VALIDATOR: Truncate long text
+    @validator('content')
+    def validate_content_length(cls, v):
+        if len(v) > MAX_TEXT_LENGTH:
+            return v[:MAX_TEXT_LENGTH] + "..."
+        return v
+
+    # 🛡️ VALIDATOR: Reject massive images (Bandwidth Protection)
+    @validator('image')
+    def validate_image_size(cls, v):
+        if v and len(v) > MAX_IMAGE_SIZE_B64:
+            raise ValueError("Image too large. Please use the official interface.")
+        return v
 
 class ChatRequest(BaseModel):
     messages: List[Message]
@@ -40,18 +56,18 @@ class ChatResponse(BaseModel):
     text_bubbles: List[str]
     products: Optional[List[dict]] = []
     allow_image: Optional[bool] = False
-    chat_ended: Optional[bool] = False # <--- NEW FLAG
+    chat_ended: Optional[bool] = False
 
-# --- 1. VISION SYSTEM PROMPT (Tighter) ---
+# --- 1. VISION SYSTEM PROMPT (Strict Validation) ---
 VISION_PROMPT = """
-You are an expert Jewelry Stylist. Analyze this image to find the perfect gift.
+You are an expert Jewelry Stylist.
 
 **TASK:**
-1. Analyze the woman's Skin Tone, Style, and probable Material preferences.
-2. EXTRACT tags strictly from the lists below.
-3. GENERATE a 'friendly_reply' that is extremely concise (Max 2 short sentences).
-   - Focus only on the key style match.
-   - Example: "Her warm tone glows with gold, and that blazer screams classic chic. I've picked sophisticated pieces to match."
+1. Check if the image contains a woman/girl or clear jewelry style reference. 
+   - If NO person/style (e.g. cat, landscape, blank): Set "valid_image": false. STOP there.
+2. If valid, analyze Skin Tone, Style, and probable Material preferences.
+3. EXTRACT tags strictly from the lists below.
+4. GENERATE a 'friendly_reply' that is extremely concise (Max 2 short sentences).
 
 **STRICT TAG OPTIONS:**
 - Material: "Gold, Silver, Rose Gold, White Gold, Gold Plated, Sterling Silver, Platinum, Enamel, Leather, Cord, Pearl, Beaded, Mixed"
@@ -62,6 +78,7 @@ You are an expert Jewelry Stylist. Analyze this image to find the perfect gift.
 
 **OUTPUT FORMAT (JSON):**
 {
+    "valid_image": boolean,
     "material": "...",
     "style": "...",
     "gemstone": "...",
@@ -70,7 +87,7 @@ You are an expert Jewelry Stylist. Analyze this image to find the perfect gift.
 }
 """
 
-# --- 2. TEXT SYSTEM PROMPT (Ends Chat) ---
+# --- 2. TEXT SYSTEM PROMPT ---
 SYSTEM_PROMPT = """
 You are "Fortuna", a warm, expert Jewelry Concierge.
 Your Goal: Help the user find a gift using a specific conversation flow.
@@ -194,6 +211,23 @@ async def chat_endpoint(request: ChatRequest):
             try:
                 vision_data = json.loads(response.text)
                 
+                # --- CHECK IF IMAGE IS VALID (Contains Person) ---
+                if not vision_data.get("valid_image", True):
+                    # Check how many times they failed (Naive check: scan history for "Image uploaded")
+                    failed_attempts = sum(1 for m in request.messages if m.content == "Image uploaded")
+                    
+                    if failed_attempts < 2:
+                        return ChatResponse(
+                            text_bubbles=["I couldn't quite see her style clearly in that photo. Do you have a clearer one, or should we just chat?"],
+                            allow_image=True # Give one more chance
+                        )
+                    else:
+                        return ChatResponse(
+                            text_bubbles=["No worries! Let's stick to text to be safe. Does she usually prefer Gold or Silver?"],
+                            allow_image=False # Revoke access
+                        )
+
+                # Valid Image -> Continue
                 friendly_reply = vision_data.get("friendly_reply", "That's a beautiful photo! I see exactly what might suit her.")
                 search_query_tags = f"{vision_data.get('style','')} {vision_data.get('material','')} {vision_data.get('gemstone','')} {vision_data.get('occasion','')} {vision_data.get('skin_tone','')}"
                 
@@ -212,7 +246,7 @@ async def chat_endpoint(request: ChatRequest):
                     text_bubbles=[friendly_reply],
                     products=final_products,
                     allow_image=False,
-                    chat_ended=True # End chat after vision search
+                    chat_ended=True
                 )
 
             except Exception as e:
