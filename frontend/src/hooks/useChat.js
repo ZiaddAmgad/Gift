@@ -41,48 +41,53 @@ export const useChat = () => {
   // --- MULTI-TENANT: CLIENT ID STATE ---
   const [clientId, setClientId] = useState('koay'); // Default fallback
 
-  // 1. CAPTURE CLIENT ID FROM URL
+  // 1. CAPTURE CLIENT ID & LOAD HISTORY
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const idFromUrl = params.get('client_id');
-      if (idFromUrl) {
-        setClientId(idFromUrl);
-      }
-    }
-    
-    // Existing Session Logic
-    let storedId = localStorage.getItem('chat_session_id');
-    if (!storedId) {
-      storedId = uuidv4();
-      localStorage.setItem('chat_session_id', storedId);
-    }
-    setSessionId(storedId);
+      const currentClient = idFromUrl || 'koay';
+      setClientId(currentClient);
 
-    const savedString = localStorage.getItem('chat_history');
-    if (savedString) {
-      try {
-        const saved = JSON.parse(savedString);
-        if ((Date.now() - saved.timestamp) < IDLE_TIMEOUT_MS) {
-          setMessages(saved.data);
-        } else {
-          localStorage.removeItem('chat_history');
+      // --- CLIENT-SPECIFIC SESSION ID ---
+      const sessionKey = `chat_session_${currentClient}`;
+      let storedId = localStorage.getItem(sessionKey);
+      if (!storedId) {
+        storedId = uuidv4();
+        localStorage.setItem(sessionKey, storedId);
+      }
+      setSessionId(storedId);
+
+      // --- CLIENT-SPECIFIC HISTORY KEY ---
+      const historyKey = `chat_history_${currentClient}`;
+      const savedString = localStorage.getItem(historyKey);
+      
+      if (savedString) {
+        try {
+          const saved = JSON.parse(savedString);
+          if ((Date.now() - saved.timestamp) < IDLE_TIMEOUT_MS) {
+            setMessages(saved.data);
+          } else {
+            localStorage.removeItem(historyKey);
+          }
+        } catch (e) {
+          localStorage.removeItem(historyKey);
         }
-      } catch (e) {
-        localStorage.removeItem('chat_history');
       }
     }
-  }, []);
+  }, []); // Run once on mount
 
+  // 2. SAVE HISTORY (With Client Key)
   useEffect(() => {
     if (messages.length > 1) {
+      const historyKey = `chat_history_${clientId}`;
       const payload = JSON.stringify({
         timestamp: Date.now(),
         data: messages
       });
-      localStorage.setItem('chat_history', payload);
+      localStorage.setItem(historyKey, payload);
     }
-  }, [messages]);
+  }, [messages, clientId]);
 
   const sendMessage = useCallback(async (text, imageFile = null) => {
     if ((!text || !text.trim()) && !imageFile) return;
@@ -175,7 +180,7 @@ export const useChat = () => {
       setMessages(prev => [...prev, { type: 'bot', text: "I'm having a little trouble connecting. Could you say that again?" }]);
       setLoading(false);
     }
-  }, [messages, clientId]); // Add clientId to dependencies
+  }, [messages, clientId]); 
 
   return { messages, sendMessage, loading, allowImage, chatEnded };
 };
