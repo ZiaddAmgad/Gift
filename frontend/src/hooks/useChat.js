@@ -35,11 +35,12 @@ export const useChat = () => {
   const [messages, setMessages] = useState([initialMessage]);
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
+  
+  // Flags
   const [allowImage, setAllowImage] = useState(false);
   const [chatEnded, setChatEnded] = useState(false);
   
-  // --- MULTI-TENANT: CLIENT ID STATE ---
-  const [clientId, setClientId] = useState('koay'); // Default fallback
+  const [clientId, setClientId] = useState('koay'); 
 
   // 1. CAPTURE CLIENT ID & LOAD HISTORY
   useEffect(() => {
@@ -49,7 +50,6 @@ export const useChat = () => {
       const currentClient = idFromUrl || 'koay';
       setClientId(currentClient);
 
-      // --- CLIENT-SPECIFIC SESSION ID ---
       const sessionKey = `chat_session_${currentClient}`;
       let storedId = localStorage.getItem(sessionKey);
       if (!storedId) {
@@ -58,7 +58,7 @@ export const useChat = () => {
       }
       setSessionId(storedId);
 
-      // --- CLIENT-SPECIFIC HISTORY KEY ---
+      // Load History
       const historyKey = `chat_history_${currentClient}`;
       const savedString = localStorage.getItem(historyKey);
       
@@ -67,6 +67,9 @@ export const useChat = () => {
           const saved = JSON.parse(savedString);
           if ((Date.now() - saved.timestamp) < IDLE_TIMEOUT_MS) {
             setMessages(saved.data);
+            // RESTORE FLAGS
+            setAllowImage(saved.allowImage === true);
+            setChatEnded(saved.chatEnded === true);
           } else {
             localStorage.removeItem(historyKey);
           }
@@ -75,19 +78,22 @@ export const useChat = () => {
         }
       }
     }
-  }, []); // Run once on mount
+  }, []); 
 
   // 2. SAVE HISTORY (With Client Key)
   useEffect(() => {
-    if (messages.length > 1) {
+    // Save if we have messages OR if flags changed
+    if (messages.length > 1 || allowImage || chatEnded) {
       const historyKey = `chat_history_${clientId}`;
       const payload = JSON.stringify({
         timestamp: Date.now(),
-        data: messages
+        data: messages,
+        allowImage: allowImage,
+        chatEnded: chatEnded
       });
       localStorage.setItem(historyKey, payload);
     }
-  }, [messages, clientId]);
+  }, [messages, clientId, allowImage, chatEnded]); 
 
   const sendMessage = useCallback(async (text, imageFile = null) => {
     if ((!text || !text.trim()) && !imageFile) return;
@@ -131,13 +137,12 @@ export const useChat = () => {
           };
         });
 
-      // --- MULTI-TENANT: SEND CLIENT ID ---
       const response = await fetch(`${API_BASE}/api/chat/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
             messages: apiHistory,
-            client_id: clientId // Pass the ID here
+            client_id: clientId 
         }),
       });
 
@@ -153,6 +158,10 @@ export const useChat = () => {
       if (data.text_bubbles && Array.isArray(data.text_bubbles)) {
         for (let i = 0; i < data.text_bubbles.length; i++) {
           const bubbleText = data.text_bubbles[i];
+          
+          // --- FIX: Skip empty bubbles ---
+          if (!bubbleText || bubbleText.trim() === "") continue;
+
           setMessages(prev => [...prev, { type: 'bot', text: bubbleText }]);
           
           if (i < data.text_bubbles.length - 1) {
@@ -162,7 +171,7 @@ export const useChat = () => {
           }
         }
       } 
-      else if (data.message) {
+      else if (data.message && data.message.trim() !== "") {
         setMessages(prev => [...prev, { type: 'bot', text: data.message }]);
       }
 

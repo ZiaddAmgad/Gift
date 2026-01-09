@@ -60,7 +60,7 @@ const ChatWindow = ({ isOpen, onClose, theme }) => {
             {msg.type === 'products' ? (
               <div className="w-full max-w-[95%]">
                 {msg.items.map((product) => (
-                  <ProductCard key={product.id} product={product} />
+                  <ProductCard key={product.id} product={product} theme={theme} />
                 ))}
               </div>
             ) : msg.type === 'user-image' ? (

@@ -1,6 +1,6 @@
 import React from 'react';
 
-const ProductCard = ({ product }) => {
+const ProductCard = ({ product, theme }) => {
   
   const generateHandle = (title) => {
     return title
@@ -12,7 +12,12 @@ const ProductCard = ({ product }) => {
   };
 
   const handle = generateHandle(product.title || "");
-  const linkUrl = product.product_url || `https://koaysilver.com/products/${handle}`;
+  
+  // --- MULTI-TENANT LINK GENERATION ---
+  // If the DB has a specific URL, use it.
+  // Otherwise, build it using the Client's Store URL from themes.js
+  const baseUrl = theme?.storeUrl || "https://koaysilver.com"; // Fallback safety
+  const linkUrl = product.product_url || `${baseUrl}/products/${handle}`;
 
   return (
     <a 
@@ -39,7 +44,6 @@ const ProductCard = ({ product }) => {
           {product.description}
         </p>
         
-        {/* DYNAMIC BUTTON COLOR */}
         <div className="w-full bg-[var(--brand-color)] text-white py-2 rounded text-center text-sm font-medium group-hover:bg-[var(--brand-hover)] transition-colors">
           View Product
         </div>
