@@ -9,22 +9,6 @@ from app.core.rag import search_products
 
 router = APIRouter()
 
-# --- CONFIGURATION ---
-if not os.getenv("GOOGLE_API_KEY"):
-    raise RuntimeError("GOOGLE_API_KEY is not set.")
-
-genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-
-text_model = genai.GenerativeModel(
-    'models/gemini-2.5-flash',
-    generation_config={"response_mime_type": "application/json"}
-)
-
-vision_model = genai.GenerativeModel(
-    'models/gemini-2.5-flash',
-    generation_config={"response_mime_type": "application/json"}
-)
-
 # --- 🛡️ SECURITY CONSTANTS ---
 MAX_TEXT_LENGTH = 200 
 MAX_IMAGE_SIZE_B64 = 1_500_000 
@@ -49,7 +33,6 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Message]
-    # --- MULTI-TENANT: ADDED CLIENT ID ---
     client_id: Optional[str] = "koay" # Default fallback
 
 class ChatResponse(BaseModel):
@@ -67,7 +50,21 @@ You are an expert Jewelry Stylist.
    - If NO person/style (e.g. cat, landscape, blank, random object): Set "valid_image": false. STOP there.
 2. If valid, analyze Skin Tone, Style, and probable Material preferences.
 3. EXTRACT tags strictly from the lists below.
-4. GENERATE a 'friendly_reply' that is extremely concise (Max 2 short sentences).
+4. GENERATE a 'friendly_reply' based on the rules below.
+
+**FRIENDLY_REPLY RULES:**
+Generate a warm, human-sounding reply (max 2 short sentences).
+The reply MUST:
+- Briefly describe her overall style in simple, everyday words
+- Suggest ONE or TWO suitable jewelry material (e.g. silver, gold, white-gold)
+- Suggest ONE or TWO jewelry type (e.g. necklace, ring, earrings) that match the visual style
+- Naturally mention the occasion (e.g. birthday, anniversary)
+- Match the relationship tone (friend = light, wife = romantic, etc.)
+
+The reply MUST NOT:
+- Use technical fashion or jewelry terms
+- Mention tags, analysis, or skin tone directly
+- Sound like a bot, expert, or sales pitch
 
 **STRICT TAG OPTIONS:**
 - Material: "Gold, Silver, Rose Gold, White Gold, Gold Plated, Sterling Silver, Platinum, Enamel, Leather, Cord, Pearl, Beaded, Mixed"
@@ -129,7 +126,19 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 8. **Final Recommendations (The End):**
    - If Recipient + Occasion + Material + Style are known -> SEARCH.
    - Return **4 products** immediately.
-   - Text Reply: "Here are 4 beautiful options that match her style perfectly. I hope you find the perfect gift!"
+   - **TEXT REPLY RULE:**
+     Generate a warm, human-sounding reply (max 2 short sentences).
+     The reply MUST:
+     - Briefly describe her overall style in simple, everyday words
+     - Suggest ONE or TWO suitable jewelry material (e.g. silver, gold, white-gold) based on user choice
+     - Suggest ONE or TWO jewelry type (e.g. necklace, ring, earrings)
+     - Naturally mention the occasion (e.g. birthday, anniversary)
+     - Match the relationship tone (friend = light, wife = romantic, etc.)
+     
+     The reply MUST NOT:
+     - Use technical fashion or jewelry terms
+     - Mention tags, analysis, or skin tone directly
+     - Sound like a bot, expert, or sales pitch
    - **CRITICAL:** Set "chat_ended": true.
 
 --- STYLE DEFINITIONS ---
@@ -191,14 +200,26 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 @router.post("/message", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     # --- MULTI-TENANT: CAPTURE CLIENT ID ---
-    namespace = request.client_id 
+    client_id = request.client_id or "koay"
+    
+    # --- 1. DYNAMIC API KEY LOGIC ---
+    # Try getting "GOOGLE_API_KEY_KOAY", fall back to default "GOOGLE_API_KEY"
+    env_key_name = f"GOOGLE_API_KEY_{client_id.upper()}"
+    client_api_key = os.getenv(env_key_name) or os.getenv("GOOGLE_API_KEY")
+    
+    # Re-configure GenAI with the correct key for this request
+    genai.configure(api_key=client_api_key)
+    
+    # Initialize Models (New instances to use the new key)
+    text_model = genai.GenerativeModel('models/gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+    vision_model = genai.GenerativeModel('models/gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
 
     try:
         last_msg = request.messages[-1]
         
         # --- PATH A: VISION LOGIC ---
         if last_msg.image:
-            print(f"📸 Image detected. Namespace: {namespace}")
+            print(f"📸 Image detected. Namespace: {client_id}")
             
             image_data = last_msg.image
             if "base64," in image_data:
@@ -237,16 +258,15 @@ async def chat_endpoint(request: ChatRequest):
                 print(f"🔎 Vision Search Query: {search_query_tags}")
                 
                 # --- MULTI-TENANT SEARCH (Vision) ---
-                raw_results = search_products(query_text=search_query_tags, top_k=6, namespace=namespace)
+                raw_results = search_products(query_text=search_query_tags, top_k=6, namespace=client_id)
                 final_products = raw_results[:4] if raw_results else []
                 
                 if not final_products:
                     friendly_reply += " I looked through our collection and these popular pieces seem closest to that style."
                     # --- MULTI-TENANT SEARCH (Fallback) ---
-                    final_products = search_products("Best seller", top_k=4, namespace=namespace)
-                else:
-                    friendly_reply += " Based on that, here are 4 beautiful options."
-
+                    final_products = search_products("Best seller", top_k=4, namespace=client_id)
+                
+                # Note: We append the friendly reply (which now contains the "Why" and "What" recommendation)
                 return ChatResponse(
                     text_bubbles=[friendly_reply],
                     products=final_products,
@@ -298,14 +318,14 @@ async def chat_endpoint(request: ChatRequest):
                 print(f"🔎 Text Search Query: {query} (Requesting: {count})")
                 
                 # --- MULTI-TENANT SEARCH (Text) ---
-                raw_results = search_products(query_text=query, top_k=6, namespace=namespace)
+                raw_results = search_products(query_text=query, top_k=6, namespace=client_id)
                 
                 if raw_results:
                     products = raw_results[:4]
                 else:
                     bubbles.append("I couldn't find an exact match, but here are our most popular pieces.")
                     # --- MULTI-TENANT SEARCH (Fallback) ---
-                    products = search_products(query_text="Best seller", top_k=4, namespace=namespace)
+                    products = search_products(query_text="Best seller", top_k=4, namespace=client_id)
 
             return ChatResponse(
                 text_bubbles=bubbles, 
