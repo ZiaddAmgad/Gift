@@ -36,13 +36,22 @@ export const useChat = () => {
   const [loading, setLoading] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [allowImage, setAllowImage] = useState(false);
-  
-  // --- NEW STATE ---
   const [chatEnded, setChatEnded] = useState(false);
+  
+  // --- MULTI-TENANT: CLIENT ID STATE ---
+  const [clientId, setClientId] = useState('koay'); // Default fallback
 
+  // 1. CAPTURE CLIENT ID FROM URL
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const idFromUrl = params.get('client_id');
+      if (idFromUrl) {
+        setClientId(idFromUrl);
+      }
+    }
+    
+    // Existing Session Logic
     let storedId = localStorage.getItem('chat_session_id');
     if (!storedId) {
       storedId = uuidv4();
@@ -117,10 +126,14 @@ export const useChat = () => {
           };
         });
 
+      // --- MULTI-TENANT: SEND CLIENT ID ---
       const response = await fetch(`${API_BASE}/api/chat/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiHistory }),
+        body: JSON.stringify({ 
+            messages: apiHistory,
+            client_id: clientId // Pass the ID here
+        }),
       });
 
       const data = await response.json();
@@ -128,7 +141,6 @@ export const useChat = () => {
       
       setAllowImage(data.allow_image || false);
       
-      // --- END CHAT LOGIC ---
       if (data.chat_ended) {
         setChatEnded(true);
       }
@@ -150,8 +162,6 @@ export const useChat = () => {
       }
 
       if (data.products && data.products.length > 0) {
-        // --- ADDED DELAY FOR PRODUCTS ---
-        // Wait 3s so user can read the text response first
         if (data.text_bubbles?.length > 0) {
             setLoading(true);
             await new Promise(resolve => setTimeout(resolve, 3000));
@@ -165,9 +175,8 @@ export const useChat = () => {
       setMessages(prev => [...prev, { type: 'bot', text: "I'm having a little trouble connecting. Could you say that again?" }]);
       setLoading(false);
     }
-  }, [messages]); 
+  }, [messages, clientId]); // Add clientId to dependencies
 
-  // Expose chatEnded to the component
   return { messages, sendMessage, loading, allowImage, chatEnded };
 };
 

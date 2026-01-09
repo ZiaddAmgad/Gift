@@ -1,20 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import ChatWindow from './ChatWindow';
+import { themes } from '../config/themes'; // Import the config
 
 const ChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  
+  // State for the current theme
+  const [currentTheme, setCurrentTheme] = useState(themes.default);
 
-  // --- FIXED: Removed Auto-Open Logic ---
-  // We only set isLoaded to true, we DO NOT force isOpen to true based on storage.
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIsLoaded(true);
+
+      // 1. Detect Client ID from URL
+      const params = new URLSearchParams(window.location.search);
+      const clientId = params.get('client_id');
+
+      // 2. Select Theme (Fallback to default if ID not found)
+      const selectedTheme = themes[clientId] || themes.default;
+      setCurrentTheme(selectedTheme);
     }
   }, []);
 
-  // We still SAVE the state if they open it, just for session consistency,
-  // but we don't restore it on a fresh reload to be less invasive.
   useEffect(() => {
     if (!isLoaded) return;
     const message = isOpen ? "chat-opened" : "chat-closed";
@@ -29,19 +37,32 @@ const ChatWidget = () => {
   if (!isLoaded) return null;
 
   return (
-    <div className="flex flex-col h-full w-full relative">
+    // 3. INJECT CSS VARIABLES HERE
+    // This makes --brand-color available to all children components
+    <div 
+      className="flex flex-col h-full w-full relative font-sans"
+      style={{
+        '--brand-color': currentTheme.primary,
+        '--brand-hover': currentTheme.hover,
+      }}
+    >
       
       {isOpen && (
         <div className="absolute bottom-20 right-0 w-full h-[calc(100%-90px)] pr-4 pb-2 box-border">
-          <ChatWindow isOpen={isOpen} onClose={() => setIsOpen(false)} />
+          {/* Pass theme text props down */}
+          <ChatWindow 
+            isOpen={isOpen} 
+            onClose={() => setIsOpen(false)} 
+            theme={currentTheme} 
+          />
         </div>
       )}
 
       <div className="absolute bottom-4 right-4 shrink-0">
         <button
           onClick={toggleOpen}
-          // Forest Green
-          className="w-14 h-14 bg-[#154027] hover:bg-[#1e5736] text-white rounded-full shadow-lg flex items-center justify-center transition-transform duration-200"
+          // Use the variable for dynamic background
+          className="w-14 h-14 bg-[var(--brand-color)] hover:bg-[var(--brand-hover)] text-white rounded-full shadow-lg flex items-center justify-center transition-transform duration-200"
         >
           {isOpen ? (
             <span className="text-xl">✕</span> 

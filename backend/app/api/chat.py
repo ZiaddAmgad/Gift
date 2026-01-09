@@ -49,6 +49,8 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Message]
+    # --- MULTI-TENANT: ADDED CLIENT ID ---
+    client_id: Optional[str] = "koay" # Default fallback
 
 class ChatResponse(BaseModel):
     text_bubbles: List[str]
@@ -188,12 +190,15 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 
 @router.post("/message", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
+    # --- MULTI-TENANT: CAPTURE CLIENT ID ---
+    namespace = request.client_id 
+
     try:
         last_msg = request.messages[-1]
         
         # --- PATH A: VISION LOGIC ---
         if last_msg.image:
-            print("📸 Image detected. Switching to Vision Model.")
+            print(f"📸 Image detected. Namespace: {namespace}")
             
             image_data = last_msg.image
             if "base64," in image_data:
@@ -231,12 +236,14 @@ async def chat_endpoint(request: ChatRequest):
                 
                 print(f"🔎 Vision Search Query: {search_query_tags}")
                 
-                raw_results = search_products(query_text=search_query_tags, top_k=6)
+                # --- MULTI-TENANT SEARCH (Vision) ---
+                raw_results = search_products(query_text=search_query_tags, top_k=6, namespace=namespace)
                 final_products = raw_results[:4] if raw_results else []
                 
                 if not final_products:
                     friendly_reply += " I looked through our collection and these popular pieces seem closest to that style."
-                    final_products = search_products("Best seller", top_k=4)
+                    # --- MULTI-TENANT SEARCH (Fallback) ---
+                    final_products = search_products("Best seller", top_k=4, namespace=namespace)
                 else:
                     friendly_reply += " Based on that, here are 4 beautiful options."
 
@@ -290,13 +297,15 @@ async def chat_endpoint(request: ChatRequest):
                 count = params.get("product_count", 4)
                 print(f"🔎 Text Search Query: {query} (Requesting: {count})")
                 
-                raw_results = search_products(query_text=query, top_k=6)
+                # --- MULTI-TENANT SEARCH (Text) ---
+                raw_results = search_products(query_text=query, top_k=6, namespace=namespace)
                 
                 if raw_results:
                     products = raw_results[:4]
                 else:
                     bubbles.append("I couldn't find an exact match, but here are our most popular pieces.")
-                    products = search_products(query_text="Best seller", top_k=4)
+                    # --- MULTI-TENANT SEARCH (Fallback) ---
+                    products = search_products(query_text="Best seller", top_k=4, namespace=namespace)
 
             return ChatResponse(
                 text_bubbles=bubbles, 

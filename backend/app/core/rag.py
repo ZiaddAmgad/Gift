@@ -18,13 +18,14 @@ genai.configure(api_key=GOOGLE_API_KEY)
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(PINECONE_INDEX_NAME)
 
-def search_products(query_text: str, top_k: int = 5) -> List[Dict[str, Any]]:
+# UPDATED: Added 'namespace' argument (Default to empty string if not provided)
+def search_products(query_text: str, top_k: int = 5, namespace: str = "") -> List[Dict[str, Any]]:
     """
     1. Converts query to vector.
-    2. Searches Pinecone.
+    2. Searches Pinecone within a specific Client Namespace.
     3. Returns 'top_k' results.
     """
-    print(f"🔍 RAG: Searching for -> '{query_text}' (Limit: {top_k})")
+    print(f"🔍 RAG: Searching '{query_text}' in Namespace: '{namespace}'")
     
     try:
         # 1. Generate Embedding
@@ -35,12 +36,13 @@ def search_products(query_text: str, top_k: int = 5) -> List[Dict[str, Any]]:
         )
         query_vector = result['embedding']
 
-        # 2. Search Pinecone
-        # We allow chat.py to decide how many to fetch (top_k)
+        # 2. Search Pinecone (With Namespace)
+        # If namespace is "", Pinecone searches the default namespace.
         search_results = index.query(
             vector=query_vector,
             top_k=top_k, 
-            include_metadata=True
+            include_metadata=True,
+            namespace=namespace # <--- CRITICAL UPDATE
         )
 
         # 3. Format Results

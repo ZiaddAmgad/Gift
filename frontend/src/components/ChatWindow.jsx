@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useChat } from '../hooks/useChat';
 import ProductCard from './ProductCard';
 
-const ChatWindow = ({ isOpen, onClose }) => {
+const ChatWindow = ({ isOpen, onClose, theme }) => {
   const { messages, sendMessage, loading, allowImage, chatEnded } = useChat();
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -38,11 +38,11 @@ const ChatWindow = ({ isOpen, onClose }) => {
   return (
     <div className="w-full h-full bg-white rounded-2xl shadow-2xl flex flex-col border border-gray-200 overflow-hidden font-sans">
       
-      {/* HEADER */}
-      <div className="bg-[#154027] p-4 flex justify-between items-center text-white shadow-md shrink-0 h-16 z-10">
+      {/* HEADER: Dynamic Color & Text */}
+      <div className="bg-[var(--brand-color)] p-4 flex justify-between items-center text-white shadow-md shrink-0 h-16 z-10">
         <div>
-          <h3 className="font-bold text-lg leading-none">Fortuna AI</h3>
-          <p className="text-xs text-gray-300 opacity-90 mt-1">Gift Concierge</p>
+          <h3 className="font-bold text-lg leading-none">{theme.title}</h3>
+          <p className="text-xs text-white/90 mt-1">{theme.subtitle}</p>
         </div>
         <button 
           onClick={onClose} 
@@ -64,7 +64,8 @@ const ChatWindow = ({ isOpen, onClose }) => {
                 ))}
               </div>
             ) : msg.type === 'user-image' ? (
-              <div className="max-w-[70%] bg-[#154027] p-2 rounded-2xl rounded-br-none shadow-sm">
+              // IMAGE BUBBLE: Dynamic Color
+              <div className="max-w-[70%] bg-[var(--brand-color)] p-2 rounded-2xl rounded-br-none shadow-sm">
                 <img 
                   src={msg.imageUrl} 
                   alt="Uploaded" 
@@ -72,9 +73,10 @@ const ChatWindow = ({ isOpen, onClose }) => {
                 />
               </div>
             ) : (
+              // TEXT BUBBLE: Dynamic Color for User
               <div className={`max-w-[85%] px-4 py-3 text-sm shadow-sm whitespace-pre-wrap leading-relaxed ${
                 msg.type === 'user' 
-                  ? 'bg-[#154027] text-white rounded-2xl rounded-br-none' 
+                  ? 'bg-[var(--brand-color)] text-white rounded-2xl rounded-br-none' 
                   : 'bg-white border border-gray-100 text-gray-800 rounded-2xl rounded-bl-none'
               }`}>
                 {msg.text}
@@ -99,7 +101,6 @@ const ChatWindow = ({ isOpen, onClose }) => {
       {/* INPUT AREA */}
       <form onSubmit={handleSubmit} className="p-3 bg-white border-t border-gray-100 flex gap-2 shadow-sm shrink-0 z-10 items-center">
         
-        {/* HIDDEN FILE INPUT */}
         <input 
           type="file" 
           accept="image/*" 
@@ -108,12 +109,11 @@ const ChatWindow = ({ isOpen, onClose }) => {
           className="hidden" 
         />
 
-        {/* ATTACHMENT BUTTON */}
         {allowImage && !chatEnded && (
           <button
             type="button"
             onClick={handleIconClick}
-            className="text-gray-400 hover:text-[#154027] transition-colors p-2 animate-fade-in"
+            className="text-gray-400 hover:text-[var(--brand-color)] transition-colors p-2 animate-fade-in"
             title="Upload Photo"
             disabled={loading}
           >
@@ -128,15 +128,16 @@ const ChatWindow = ({ isOpen, onClose }) => {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder={chatEnded ? "Conversation ended." : "Type your reply..."}
-          // --- CHANGE HERE: Added maxLength ---
           maxLength={200}
-          className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-[#154027] focus:ring-1 focus:ring-[#154027] transition-all disabled:bg-gray-100 disabled:text-gray-500"
+          // DYNAMIC BORDER/FOCUS
+          className="flex-1 border border-gray-300 rounded-full px-4 py-2 text-sm focus:outline-none focus:border-[var(--brand-color)] focus:ring-1 focus:ring-[var(--brand-color)] transition-all disabled:bg-gray-100 disabled:text-gray-500"
           disabled={loading || chatEnded} 
         />
         <button 
           type="submit" 
           disabled={loading || !input.trim() || chatEnded} 
-          className="bg-[#154027] text-white px-4 py-2 rounded-full hover:bg-[#1e5736] disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-sm shadow-sm"
+          // DYNAMIC BUTTON
+          className="bg-[var(--brand-color)] text-white px-4 py-2 rounded-full hover:bg-[var(--brand-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-all font-medium text-sm shadow-sm"
         >
           Send
         </button>
