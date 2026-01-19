@@ -100,16 +100,18 @@ def ingest_client(client_id):
             except: time.sleep(2)
         
         if embedding:
+            # --- UPDATED METADATA: INCLUDED handle ---
             metadata = {
                 "id": str(row.get('id')),
                 "title": str(row.get('title', '')),
                 "price": clean_price(row.get('price')),
                 "style": str(row.get('style', '')),
-                "category": str(row.get('category', '')), # <--- ADDED CATEGORY
+                "category": str(row.get('category', '')),
                 "image_url": str(row.get('image_url', '')),
                 "material": str(row.get('material', '')),
                 "occasion": str(row.get('occasion', '')),
-                "skin_tone": str(row.get('skin_tone', ''))
+                "skin_tone": str(row.get('skin_tone', '')),
+                "handle": str(row.get('handle', '')) # <--- ADDED HANDLE HERE
             }
 
             vectors_batch.append({

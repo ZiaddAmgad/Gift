@@ -25,6 +25,7 @@ const ChatWidget = () => {
 
   useEffect(() => {
     if (!isLoaded) return;
+    // Notify parent window (for when this runs inside an iframe on Shopify)
     const message = isOpen ? "chat-opened" : "chat-closed";
     window.parent.postMessage(message, "*");
     localStorage.setItem('widget_is_open', isOpen);
@@ -37,10 +38,9 @@ const ChatWidget = () => {
   if (!isLoaded) return null;
 
   return (
-    // 3. INJECT CSS VARIABLES HERE
-    // This makes --brand-color available to all children components
+    // MAIN CONTAINER: pointer-events-none ensures we click "through" the empty areas
     <div 
-      className="flex flex-col h-full w-full relative font-sans"
+      className="flex flex-col h-full w-full relative font-sans pointer-events-none"
       style={{
         '--brand-color': currentTheme.primary,
         '--brand-hover': currentTheme.hover,
@@ -48,8 +48,8 @@ const ChatWidget = () => {
     >
       
       {isOpen && (
-        <div className="absolute bottom-20 right-0 w-full h-[calc(100%-90px)] pr-4 pb-2 box-border">
-          {/* Pass theme text props down */}
+        // CHAT WINDOW: pointer-events-auto allows interaction inside the chat
+        <div className="absolute bottom-20 right-0 w-[90vw] md:w-[400px] h-[600px] max-h-[80vh] pr-4 pb-2 box-border pointer-events-auto">
           <ChatWindow 
             isOpen={isOpen} 
             onClose={() => setIsOpen(false)} 
@@ -58,7 +58,8 @@ const ChatWidget = () => {
         </div>
       )}
 
-      <div className="absolute bottom-4 right-4 shrink-0">
+      {/* BUTTON: pointer-events-auto allows clicking the button */}
+      <div className="absolute bottom-4 right-4 shrink-0 pointer-events-auto">
         <button
           onClick={toggleOpen}
           // Use the variable for dynamic background

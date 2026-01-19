@@ -2,20 +2,33 @@ import React from 'react';
 
 const ProductCard = ({ product, theme }) => {
   
+  // 1. Fallback Generator (Only used if product.handle is missing)
   const generateHandle = (title) => {
     return title
       .toLowerCase()
-      .replace(/'/g, '')           // 1. Remove apostrophes (Queen's -> Queens)
-      .replace(/’/g, '')           // 1b. Remove smart quotes
-      .replace(/[^a-z0-9]+/g, '-') // 2. Replace ALL non-alphanumeric chars (spaces, brackets, commas) with a single dash
-      .replace(/^-+|-+$/g, '');    // 3. Trim dashes from start and end
+      .replace(/'/g, '')           
+      .replace(/’/g, '')           
+      .replace(/[^a-z0-9]+/g, '-') 
+      .replace(/^-+|-+$/g, '');    
   };
 
-  const handle = generateHandle(product.title || "");
+  // 2. PREFER THE REAL HANDLE FROM PINECONE
+  const handle = product.handle || generateHandle(product.title || "");
   
-  // --- MULTI-TENANT LINK GENERATION ---
+  // --- BASE URL GENERATION ---
   const baseUrl = theme?.storeUrl || "https://koaysilver.com"; 
-  const linkUrl = product.product_url || `${baseUrl}/products/${handle}`;
+  
+  // 3. Construct the URL
+  // If we have a full URL in metadata, use it. Otherwise, build it with the handle.
+  const rawUrl = product.product_url || `${baseUrl}/products/${handle}`;
+
+  // --- ANALYTICS INJECTION (UTM TAGS) ---
+  const utmSource = "utm_source=Leeki_AI"; 
+  const utmMedium = "utm_medium=concierge_widget";
+  const utmCampaign = "utm_campaign=recommendation";
+  
+  const separator = rawUrl.includes('?') ? '&' : '?';
+  const linkUrl = `${rawUrl}${separator}${utmSource}&${utmMedium}&${utmCampaign}`;
 
   return (
     <a 
@@ -36,7 +49,7 @@ const ProductCard = ({ product, theme }) => {
       
       {/* DETAILS SECTION */}
       <div className="p-4">
-        {/* TITLE ONLY (Price removed) */}
+        {/* TITLE */}
         <div className="mb-2">
           <h3 className="font-bold text-gray-800 text-sm line-clamp-2">{product.title}</h3>
         </div>
@@ -46,7 +59,7 @@ const ProductCard = ({ product, theme }) => {
           {product.description}
         </p>
         
-        {/* DYNAMIC BUTTON COLOR */}
+        {/* BUTTON */}
         <div className="w-full bg-[var(--brand-color)] text-white py-2 rounded text-center text-sm font-medium group-hover:bg-[var(--brand-hover)] transition-colors">
           View Product
         </div>

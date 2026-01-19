@@ -138,7 +138,9 @@ def process_client_data(client_id):
 
     file_exists = os.path.exists(output_file)
     mode = 'a' if file_exists else 'w'
-    headers = ['id', 'title', 'price', 'description', 'style', 'material', 'skin_tone', 'occasion', 'gemstone', 'image_url', 'category']
+    
+    # --- UPDATED HEADER: ADDED 'handle' ---
+    headers = ['id', 'title', 'price', 'description', 'style', 'material', 'skin_tone', 'occasion', 'gemstone', 'image_url', 'category', 'handle']
 
     with open(output_file, mode, newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
@@ -148,12 +150,13 @@ def process_client_data(client_id):
             try:
                 p_id = str(p.get('id'))
                 title = p.get('title')
+                handle = p.get('handle', '') # <--- EXTRACT HANDLE
                 desc = clean_html(p.get('body_html', '')) or title
                 variants = p.get('variants', [])
                 price = variants[0].get('price') if variants else "0"
                 images = p.get('images', [])
                 image_url = images[0].get('src') if images else ""
-
+                
                 cat = p.get('product_type', '')
                 if not cat or cat.lower() == "jewelry": cat = infer_category(title)
                 
@@ -172,7 +175,8 @@ def process_client_data(client_id):
                 occasion = ai_data.get('occasion', 'General') if ai_data else "General"
                 gemstone = ai_data.get('gemstone', 'None') if ai_data else "None"
 
-                writer.writerow([p_id, title, price, desc, style, material, skin_tone, occasion, gemstone, image_url, cat])
+                # --- UPDATED ROW: INCLUDED handle ---
+                writer.writerow([p_id, title, price, desc, style, material, skin_tone, occasion, gemstone, image_url, cat, handle])
                 f.flush()
 
             except Exception as e:
