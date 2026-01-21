@@ -6,20 +6,25 @@ const ChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   
-  // State for the current theme
+  // State for the current theme & alignment
   const [currentTheme, setCurrentTheme] = useState(themes.default);
+  const [alignment, setAlignment] = useState('right'); // Default to right
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIsLoaded(true);
-
-      // 1. Detect Client ID from URL
       const params = new URLSearchParams(window.location.search);
-      const clientId = params.get('client_id');
 
-      // 2. Select Theme (Fallback to default if ID not found)
+      // 1. Detect Client ID
+      const clientId = params.get('client_id');
       const selectedTheme = themes[clientId] || themes.default;
       setCurrentTheme(selectedTheme);
+
+      // 2. Detect Alignment (left or right)
+      const alignParam = params.get('align');
+      if (alignParam === 'left') {
+        setAlignment('left');
+      }
     }
   }, []);
 
@@ -37,6 +42,12 @@ const ChatWidget = () => {
 
   if (!isLoaded) return null;
 
+  // --- DYNAMIC POSITION CLASSES ---
+  // If left: stick to left edge (left-0) and add padding-left (pl-4) for spacing
+  // If right: stick to right edge (right-0) and add padding-right (pr-4) for spacing
+  const windowPosition = alignment === 'left' ? 'left-0 pl-4' : 'right-0 pr-4';
+  const buttonPosition = alignment === 'left' ? 'left-4' : 'right-4';
+
   return (
     // MAIN CONTAINER: pointer-events-none ensures we click "through" the empty areas
     <div 
@@ -48,8 +59,8 @@ const ChatWidget = () => {
     >
       
       {isOpen && (
-        // CHAT WINDOW: pointer-events-auto allows interaction inside the chat
-        <div className="absolute bottom-20 right-0 w-[90vw] md:w-[400px] h-[600px] max-h-[80vh] pr-4 pb-2 box-border pointer-events-auto">
+        // CHAT WINDOW: Uses dynamic windowPosition (left vs right)
+        <div className={`absolute bottom-20 ${windowPosition} w-[90vw] md:w-[400px] h-[600px] max-h-[80vh] pb-2 box-border pointer-events-auto`}>
           <ChatWindow 
             isOpen={isOpen} 
             onClose={() => setIsOpen(false)} 
@@ -58,8 +69,8 @@ const ChatWidget = () => {
         </div>
       )}
 
-      {/* BUTTON: pointer-events-auto allows clicking the button */}
-      <div className="absolute bottom-4 right-4 shrink-0 pointer-events-auto">
+      {/* BUTTON: Uses dynamic buttonPosition (left vs right) */}
+      <div className={`absolute bottom-4 ${buttonPosition} shrink-0 pointer-events-auto`}>
         <button
           onClick={toggleOpen}
           // Use the variable for dynamic background
