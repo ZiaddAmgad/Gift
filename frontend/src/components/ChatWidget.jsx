@@ -1,26 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import ChatWindow from './ChatWindow';
-import { themes } from '../config/themes'; // Import the config
+import { themes } from '../config/themes'; 
 
 const ChatWidget = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
   
-  // State for the current theme & alignment
   const [currentTheme, setCurrentTheme] = useState(themes.default);
-  const [alignment, setAlignment] = useState('right'); // Default to right
+  const [alignment, setAlignment] = useState('right'); 
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setIsLoaded(true);
       const params = new URLSearchParams(window.location.search);
 
-      // 1. Detect Client ID
       const clientId = params.get('client_id');
       const selectedTheme = themes[clientId] || themes.default;
       setCurrentTheme(selectedTheme);
 
-      // 2. Detect Alignment (left or right)
       const alignParam = params.get('align');
       if (alignParam === 'left') {
         setAlignment('left');
@@ -30,7 +27,6 @@ const ChatWidget = () => {
 
   useEffect(() => {
     if (!isLoaded) return;
-    // Notify parent window (for when this runs inside an iframe on Shopify)
     const message = isOpen ? "chat-opened" : "chat-closed";
     window.parent.postMessage(message, "*");
     localStorage.setItem('widget_is_open', isOpen);
@@ -42,14 +38,13 @@ const ChatWidget = () => {
 
   if (!isLoaded) return null;
 
-  // --- DYNAMIC POSITION CLASSES ---
-  // If left: stick to left edge (left-0) and add padding-left (pl-4) for spacing
-  // If right: stick to right edge (right-0) and add padding-right (pr-4) for spacing
-  const windowPosition = alignment === 'left' ? 'left-0 pl-4' : 'right-0 pr-4';
+  // --- DYNAMIC POSITION LOGIC (THE FIX) ---
+  // 1. Mobile Width: w-[calc(100%-32px)] ensures there is always a 16px gap on BOTH sides.
+  // 2. Position: Explicitly set left-4 or right-4 to create the "Floating" look.
+  const windowPosition = alignment === 'left' ? 'left-4' : 'right-4';
   const buttonPosition = alignment === 'left' ? 'left-4' : 'right-4';
 
   return (
-    // MAIN CONTAINER: pointer-events-none ensures we click "through" the empty areas
     <div 
       className="flex flex-col h-full w-full relative font-sans pointer-events-none"
       style={{
@@ -59,8 +54,8 @@ const ChatWidget = () => {
     >
       
       {isOpen && (
-        // CHAT WINDOW: Uses dynamic windowPosition (left vs right)
-        <div className={`absolute bottom-20 ${windowPosition} w-[90vw] md:w-[400px] h-[600px] max-h-[80vh] pb-2 box-border pointer-events-auto`}>
+        // Added 'shadow-2xl' to the wrapper for pop-out effect
+        <div className={`absolute bottom-20 ${windowPosition} w-[calc(100%-32px)] md:w-[400px] h-[600px] max-h-[80vh] pb-2 box-border pointer-events-auto`}>
           <ChatWindow 
             isOpen={isOpen} 
             onClose={() => setIsOpen(false)} 
@@ -69,11 +64,9 @@ const ChatWidget = () => {
         </div>
       )}
 
-      {/* BUTTON: Uses dynamic buttonPosition (left vs right) */}
       <div className={`absolute bottom-4 ${buttonPosition} shrink-0 pointer-events-auto`}>
         <button
           onClick={toggleOpen}
-          // Use the variable for dynamic background
           className="w-14 h-14 bg-[var(--brand-color)] hover:bg-[var(--brand-hover)] text-white rounded-full shadow-lg flex items-center justify-center transition-transform duration-200"
         >
           {isOpen ? (
