@@ -1,21 +1,4 @@
 export const themes = {
-  // --- EXISTING CLIENTS ---
-  fortuna: {
-    primary: '#154027',
-    hover: '#1e5736',
-    title: 'Fortuna AI',
-    subtitle: 'Gift Concierge',
-    storeUrl: 'https://fortunaeg.com',
-    bgImage: '/fortuna_demo.jpg'
-  },
-  koay: {
-    primary: '#000000',
-    hover: '#333333',
-    title: 'Koay Assistant',
-    subtitle: 'Silver Specialist',
-    storeUrl: 'https://koaysilver.com',
-    bgImage: '/koay_demo.jpg'
-  },
   artsy: {
     primary: '#111111',
     hover: '#444444',
@@ -24,15 +7,13 @@ export const themes = {
     storeUrl: 'https://artsysilver.co',
     bgImage: '/artsy_demo.jpg'
   },
-
-  // --- NEW CLIENTS ---
   gaia: {
-    primary: '#000000',
-    hover: '#333333',
+    primary: '#5F7161', 
+    hover: '#748B6F',
     title: 'Gaia Stylist',
     subtitle: 'Joyful Gifting',
     storeUrl: 'https://gaia-global.shop', 
-    bgImage: '/gaia_demo.jpg' // Save screenshot as public/gaia_demo.jpg
+    bgImage: '/gaia_demo.jpg'
   },
   marly: {
     primary: '#000000',

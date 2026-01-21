@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import ChatWidget from '../components/ChatWidget';
-import { themes } from '../config/themes'; // Import themes
+import { themes } from '../config/themes'; 
 
 // --- INLINE ICONS ---
 const MenuIcon = () => (
@@ -20,38 +20,39 @@ const Home = () => {
   const [currentTheme, setCurrentTheme] = useState(null);
 
   useEffect(() => {
-    // 1. Get Client ID
     const params = new URLSearchParams(window.location.search);
     const clientId = params.get('client_id');
-    
-    // 2. Load Theme Config
     const selected = themes[clientId] || themes.default;
     setCurrentTheme(selected);
   }, []);
 
-  if (!currentTheme) return null; // Avoid flicker
+  if (!currentTheme) return null;
 
   return (
-    // -----------------------------------------------------------
-    // THE FIX: "h-screen w-full overflow-y-auto"
-    // This forces the DIV to scroll, ignoring the body's overflow:hidden
-    // -----------------------------------------------------------
-    <div className="h-screen w-full overflow-y-auto bg-white font-sans text-gray-900 relative">
+    // Added 'overflow-x-hidden' to prevent accidental horizontal scroll on the container
+    // but kept overflow-y-auto for vertical scrolling
+    <div className="h-screen w-full overflow-y-auto overflow-x-hidden bg-white font-sans text-gray-900 relative">
       
-      {/* --- MIRROR MODE (Use Screenshot) --- */}
       {currentTheme.bgImage ? (
-        <div className="w-full max-w-[1920px] mx-auto shadow-2xl">
+        // --- MIRROR MODE ---
+        <div className="w-full relative">
           <img 
             src={currentTheme.bgImage} 
             alt="Store Preview" 
-            className="w-full h-auto block"
+            // THE FIX:
+            // 1. min-w-[1200px]: On mobile, force image to be 1200px wide (Desktop size).
+            //    This mimics a "Desktop View" on mobile, making text readable.
+            // 2. md:min-w-full: On Desktop, just fit the width normally.
+            // 3. left-1/2 -translate-x-1/2: This centers the image if it's wider than the screen.
+            className="absolute top-0 left-1/2 transform -translate-x-1/2 min-w-[1200px] md:static md:transform-none md:min-w-0 md:w-full h-auto block"
             loading="eager"
           />
+          {/* Spacer div to give the page height since the image is absolute on mobile */}
+          <div className="h-[200vh] md:hidden"></div>
         </div>
       ) : (
-        /* --- GENERIC LUXURY TEMPLATE (Fallback) --- */
+        /* --- GENERIC FALLBACK --- */
         <>
-          {/* Navbar */}
           <nav className="border-b border-gray-100 sticky top-0 bg-white/95 backdrop-blur-sm z-40">
             <div className="container mx-auto px-6 h-20 flex items-center justify-between">
               <div className="flex items-center gap-6">
@@ -68,7 +69,6 @@ const Home = () => {
             </div>
           </nav>
 
-          {/* Hero */}
           <section className="relative h-[650px] bg-[#f8f8f8] flex items-center justify-center">
             <div className="text-center px-4 max-w-3xl">
               <span className="text-xs font-bold tracking-[0.3em] text-gray-400 uppercase mb-6 block">
@@ -86,7 +86,6 @@ const Home = () => {
             </div>
           </section>
 
-          {/* Product Grid */}
           <section className="container mx-auto px-6 py-24">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-12">
               {[1, 2, 3].map((i) => (
@@ -108,10 +107,6 @@ const Home = () => {
       )}
 
       {/* --- WIDGET WRAPPER --- */}
-      {/* 
-         This sits outside the scroll flow (fixed) so it stays 
-         on screen while the user scrolls the content above.
-      */}
       <div className="fixed inset-0 z-[9999] pointer-events-none">
         <ChatWidget />
       </div>
