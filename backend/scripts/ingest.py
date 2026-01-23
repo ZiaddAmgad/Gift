@@ -2,6 +2,7 @@ import os
 import time
 import argparse
 import pandas as pd
+import unicodedata
 from dotenv import load_dotenv
 import google.generativeai as genai
 from pinecone import Pinecone, ServerlessSpec
@@ -20,11 +21,29 @@ def clean_price(price_val):
         return float(clean_str)
     except: return 0.0
 
+# --- THE NUCLEAR OPTION (Strict ASCII) ---
+def force_ascii(text):
+    """
+    Removes ANY character that isn't standard English/ASCII.
+    This deletes Arabic/Chinese/Emojis to prevent Windows HTTP crashes.
+    Ex: "Islamic “آية الكرسي"" -> "Islamic Necklace"
+    """
+    if text is None: return ""
+    s = str(text)
+    
+    # 1. Normalize (Turn 'é' into 'e')
+    s = unicodedata.normalize('NFKD', s)
+    
+    # 2. Encode to ASCII, ignoring errors (Drops Arabic/Emojis)
+    s = s.encode('ascii', 'ignore').decode('ascii')
+    
+    # 3. Clean up double quotes/spaces left behind
+    s = s.replace('"', '').replace("'", "")
+    return s.strip()
+
 def get_existing_ids(index, namespace):
-    """Fetches all vector IDs currently in the namespace to avoid re-embedding."""
     existing_ids = set()
     try:
-        # Pinecone list method is paginated. We fetch all pages.
         for ids in index.list(namespace=namespace):
             existing_ids.update(ids)
         print(f"🧐 Found {len(existing_ids)} existing vectors in namespace '{namespace}'")
@@ -54,7 +73,6 @@ def ingest_client(client_id):
     
     index = pc.Index(PINECONE_INDEX_NAME)
 
-    # 1. LOAD CSV
     script_dir = os.path.dirname(os.path.abspath(__file__)) 
     backend_dir = os.path.dirname(script_dir)
     root_dir = os.path.dirname(backend_dir)
@@ -65,11 +83,16 @@ def ingest_client(client_id):
         raise FileNotFoundError(f"❌ No enriched data found for {client_id}")
 
     print(f"📂 Reading: {csv_path}")
-    df = pd.read_csv(csv_path, dtype={'id': str})
+    
+    try:
+        df = pd.read_csv(csv_path, dtype={'id': str}, encoding='utf-8')
+    except UnicodeDecodeError:
+        print("⚠️ UTF-8 read failed, trying latin-1 (Excel)...")
+        df = pd.read_csv(csv_path, dtype={'id': str}, encoding='latin-1')
+
     df = df.fillna('')
     print(f"📄 CSV contains {len(df)} products.")
 
-    # 2. FILTER ALREADY INGESTED
     existing_ids = get_existing_ids(index, client_id)
     
     df_new = df[~df['id'].isin(existing_ids)]
@@ -80,11 +103,15 @@ def ingest_client(client_id):
 
     print(f"⚡ New products to ingest: {len(df_new)}")
     
-    # 3. PROCESS NEW ONLY
     vectors_batch = []
     
     for i, row in df_new.iterrows():
-        text_to_embed = f"Title: {row.get('title', '')}. Description: {row.get('description', '')}. Style: {row.get('style', '')}. Category: {row.get('category', '')}. Material: {row.get('material')}. Occasion: {row.get('occasion')}. Skin Tone: {row.get('skin_tone')}."
+        # Get raw text for embedding (We WANT the AI to read the Arabic)
+        raw_title = str(row.get('title', ''))
+        raw_desc = str(row.get('description', ''))
+        
+        # Prepare text to embed (Use raw rich text)
+        text_to_embed = f"Title: {raw_title}. Description: {raw_desc}. Style: {row.get('style')}. Material: {row.get('material')}."
 
         embedding = None
         for attempt in range(3):
@@ -100,18 +127,19 @@ def ingest_client(client_id):
             except: time.sleep(2)
         
         if embedding:
-            # --- UPDATED METADATA: INCLUDED handle ---
+            # --- APPLY STRICT ASCII TO METADATA ---
+            # This ensures the upload to Pinecone does NOT crash on Windows
             metadata = {
                 "id": str(row.get('id')),
-                "title": str(row.get('title', '')),
+                "title": force_ascii(raw_title), # Stripped for safety
                 "price": clean_price(row.get('price')),
-                "style": str(row.get('style', '')),
-                "category": str(row.get('category', '')),
+                "style": force_ascii(row.get('style', '')),
+                "category": force_ascii(row.get('category', '')),
                 "image_url": str(row.get('image_url', '')),
-                "material": str(row.get('material', '')),
-                "occasion": str(row.get('occasion', '')),
-                "skin_tone": str(row.get('skin_tone', '')),
-                "handle": str(row.get('handle', '')) # <--- ADDED HANDLE HERE
+                "material": force_ascii(row.get('material', '')),
+                "occasion": force_ascii(row.get('occasion', '')),
+                "skin_tone": force_ascii(row.get('skin_tone', '')),
+                "handle": force_ascii(row.get('handle', ''))
             }
 
             vectors_batch.append({
@@ -120,7 +148,8 @@ def ingest_client(client_id):
                 "metadata": metadata
             })
             
-            print(f"[{len(vectors_batch)}/{len(df_new)}] Prepared: {row.get('title', '')[:20]}...")
+            # Print safe title for console
+            print(f"[{len(vectors_batch)}/{len(df_new)}] Prepared: {metadata['title'][:20]}...")
 
         if len(vectors_batch) >= BATCH_SIZE:
             index.upsert(vectors=vectors_batch, namespace=client_id)

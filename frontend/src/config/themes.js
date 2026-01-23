@@ -31,14 +31,6 @@ export const themes = {
     storeUrl: 'https://zomasilver.com',
     bgImage: '/zoma_demo.jpg' // Save screenshot as public/zoma_demo.jpg
   },
-  safaa: {
-    primary: '#000000',
-    hover: '#333333',
-    title: 'Safaa Jewelry AI',
-    subtitle: 'Personal Stylist',
-    storeUrl: 'https://safaajewelry.com',
-    bgImage: '/safaa_demo.jpg' // Save screenshot as public/safaa_demo.jpg
-  },
   taba: {
     primary: '#E9967A', // Salmon Pink to match their header/buttons
     hover: '#d0856d',
