@@ -2,7 +2,7 @@ import React from 'react';
 
 const ProductCard = ({ product, theme }) => {
   
-  // 1. Fallback Generator (Only used if product.handle is missing)
+  // 1. Fallback Generator (Only runs if Pinecone handle is missing)
   const generateHandle = (title) => {
     return title
       .toLowerCase()
@@ -12,19 +12,20 @@ const ProductCard = ({ product, theme }) => {
       .replace(/^-+|-+$/g, '');    
   };
 
-  // 2. PREFER THE REAL HANDLE FROM PINECONE
-  const handle = product.handle || generateHandle(product.title || "");
+  // 2. GET THE HANDLE
+  // Priority A: The correct handle saved in Pinecone (metadata)
+  // Priority B: Generate one from title (Emergency backup)
+  const handle = product.handle ? product.handle : generateHandle(product.title || "");
   
-  // --- BASE URL GENERATION ---
-  const baseUrl = theme?.storeUrl || "https://koaysilver.com"; 
-  
-  // 3. Construct the URL
-  // If we have a full URL in metadata, use it. Otherwise, build it with the handle.
-  const rawUrl = product.product_url || `${baseUrl}/products/${handle}`;
+  // 3. BUILD THE URL DYNAMICALLY
+  // We do NOT use product.product_url here because we want to ensure
+  // it uses the correct domain from themes.js
+  const baseUrl = theme?.storeUrl || "https://artsysilver.co"; 
+  const rawUrl = `${baseUrl}/products/${handle}`;
 
-  // --- ANALYTICS INJECTION (UTM TAGS) ---
+  // 4. ADD ANALYTICS (UTM TAGS)
   const utmSource = "utm_source=Leeki_AI"; 
-  const utmMedium = "utm_medium=concierge_widget";
+  const utmMedium = "utm_medium=gift_assistant_widget";
   const utmCampaign = "utm_campaign=recommendation";
   
   const separator = rawUrl.includes('?') ? '&' : '?';

@@ -10,7 +10,7 @@ from app.core.rag import search_products
 router = APIRouter()
 
 # --- 🛡️ SECURITY CONSTANTS ---
-MAX_TEXT_LENGTH = 200 
+MAX_TEXT_LENGTH = 150 
 MAX_IMAGE_SIZE_B64 = 1_500_000 
 
 # --- DATA MODELS ---
@@ -33,7 +33,7 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Message]
-    client_id: Optional[str] = "koay" # Default fallback
+    client_id: Optional[str] = "artsy" # Default fallback
 
 class ChatResponse(BaseModel):
     text_bubbles: List[str]
@@ -45,26 +45,40 @@ class ChatResponse(BaseModel):
 VISION_PROMPT = """
 You are an expert Jewelry Stylist.
 
+**INPUTS:**
+1. **Chat History:** Use this to understand WHO (Recipient) and WHY (Occasion).
+2. **Image:** Use this to understand the VISUAL STYLE and SKIN TONE.
+
 **TASK:**
 1. Check if the image contains a woman/girl or clear jewelry style reference. 
-   - If NO person/style (e.g. cat, landscape, blank, random object): Set "valid_image": false. STOP there.
-2. If valid, analyze Skin Tone, Style, and probable Material preferences.
-3. EXTRACT tags strictly from the lists below.
-4. GENERATE a 'friendly_reply'.
-   - **RULE:** Write exactly 2 sentences.
-   - **Sentence 1:** Briefly describe her style/vibe based on the image (e.g. "She has a lovely classic elegance.").
-   - **Sentence 2:** "Based on that, I recommend these 4 pieces." (Or a similar variation).
+   - If NO person/style: Set "valid_image": false. STOP there.
+2. **Visual Analysis:** Analyze the image for Skin Tone, Style, Material.
+3. **Context Analysis:** Analyze the Chat History. Apply the **TAG MAPPING LOGIC** below to extract "context_tags".
+4. GENERATE a 'friendly_reply' (2 sentences max).
 
-**STRICT TAG OPTIONS:**
+**TAG MAPPING LOGIC (Strictly apply this to Chat History):**
+- **Recipient:**
+  - Mom / Grandma / Aunt -> "Traditional, Classic, Vintage"
+  - Wife / Partner / Fiancee -> "Romantic, Classic, Statement"
+  - Girlfriend -> "Romantic, Trendy, Dainty"
+  - Sister / Friend -> "Trendy, Boho, Modern"
+- **Occasion:**
+  - Valentine -> "Valentine Romantic"
+  - Anniversary -> "Anniversary Romantic Classic"
+  - Mother's Day -> "Mother's Day Traditional"
+  - Party / Wedding -> "Party Statement Bold"
+  - Holiday -> "Holiday Statement"
+
+**STRICT VISUAL TAG OPTIONS (Apply this to Image):**
 - Material: "Gold, Silver, Rose Gold, White Gold, Gold Plated, Sterling Silver, Platinum, Enamel, Leather, Cord, Pearl, Beaded, Mixed"
 - Style: "Minimalist, Boho, Vintage, Bold, Statement, Art Deco, Modern, Classic, Romantic, Geometric, Nature, Dainty, Industrial, Traditional, Trendy"
 - Gemstone: "Diamond, Zircon, Pearl, Turquoise, Onyx, Crystal, Emerald, Ruby, Sapphire, None"
 - Skin Tone: "Cool Tones, Warm Tones, Neutral"
-- Occasion: "Daily, Party, Valentine, Anniversary, Mother's Day, Holiday, Gift"
 
 **OUTPUT FORMAT (JSON):**
 {
     "valid_image": boolean,
+    "context_tags": "String containing mapped tags from History (e.g., 'Romantic Classic' if Fiancee found)",
     "material": "...",
     "style": "...",
     "gemstone": "...",
@@ -75,7 +89,7 @@ You are an expert Jewelry Stylist.
 
 # --- 2. TEXT SYSTEM PROMPT ---
 SYSTEM_PROMPT = """
-You are "Fortuna", a warm, expert Jewelry Concierge.
+You are a warm, expert Jewelry Concierge.
 Your Goal: Help the user find a gift using a specific conversation flow.
 LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 
@@ -179,18 +193,14 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 
 @router.post("/message", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    # --- MULTI-TENANT: CAPTURE CLIENT ID ---
-    client_id = request.client_id or "koay"
+    client_id = request.client_id or "artsy"
     
-    # --- 1. DYNAMIC API KEY LOGIC ---
-    # Try getting "GOOGLE_API_KEY_KOAY", fall back to default "GOOGLE_API_KEY"
+    # --- DYNAMIC API KEY ---
     env_key_name = f"GOOGLE_API_KEY_{client_id.upper()}"
     client_api_key = os.getenv(env_key_name) or os.getenv("GOOGLE_API_KEY")
     
-    # Re-configure GenAI with the correct key for this request
     genai.configure(api_key=client_api_key)
     
-    # Initialize Models (New instances to use the new key)
     text_model = genai.GenerativeModel('models/gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
     vision_model = genai.GenerativeModel('models/gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
 
@@ -205,39 +215,45 @@ async def chat_endpoint(request: ChatRequest):
             if "base64," in image_data:
                 image_data = image_data.split("base64,")[1]
             
-            image_part = {
-                "mime_type": "image/jpeg", 
-                "data": image_data
-            }
+            image_part = {"mime_type": "image/jpeg", "data": image_data}
 
-            response = await vision_model.generate_content_async([VISION_PROMPT, image_part])
+            # 1. Prepare Text History for Context
+            history_text = "--- CHAT HISTORY ---\n"
+            for m in request.messages:
+                if m.role == 'user' and not m.image:
+                    history_text += f"User: {m.content}\n"
+            
+            # 2. Multimodal Call: Prompt + History + Image
+            response = await vision_model.generate_content_async([VISION_PROMPT, history_text, image_part])
             
             try:
                 vision_data = json.loads(response.text)
                 
-                # --- CHECK IF IMAGE IS VALID (Contains Person/Style) ---
                 if not vision_data.get("valid_image", True):
-                    # FIX: Count both "Image uploaded" (current) AND "[User sent an image]" (past history)
                     failed_attempts = sum(1 for m in request.messages if m.content in ["Image uploaded", "[User sent an image]"])
-                    
                     if failed_attempts < 2:
                         return ChatResponse(
                             text_bubbles=["I couldn't quite see her style clearly in that photo. Do you have a clearer one, or should we just chat?"],
-                            allow_image=True # Give one more chance
+                            allow_image=True 
                         )
                     else:
                         return ChatResponse(
                             text_bubbles=["No worries! Let's stick to text to be safe. Does she usually prefer Gold or Silver?"],
-                            allow_image=False # Revoke access
+                            allow_image=False 
                         )
 
-                # Valid Image -> Continue
                 friendly_reply = vision_data.get("friendly_reply", "That's a beautiful photo! I see exactly what might suit her.")
-                search_query_tags = f"{vision_data.get('style','')} {vision_data.get('material','')} {vision_data.get('gemstone','')} {vision_data.get('occasion','')} {vision_data.get('skin_tone','')}"
                 
-                print(f"🔎 Vision Search Query: {search_query_tags}")
+                # 3. Combine Tags (Context from History + Visual from Image)
+                context_tags = vision_data.get('context_tags', '')
+                visual_tags = f"{vision_data.get('style','')} {vision_data.get('material','')} {vision_data.get('gemstone','')} {vision_data.get('occasion','')} {vision_data.get('skin_tone','')}"
                 
-                # --- MULTI-TENANT SEARCH (Vision) ---
+                # Context comes first for RAG priority
+                search_query_tags = f"{context_tags} {visual_tags}".strip()
+                
+                print(f"🔎 Hybrid Search Query: {search_query_tags}")
+                
+                # 4. Search
                 raw_results = search_products(query_text=search_query_tags, top_k=6, namespace=client_id)
                 final_products = raw_results[:4] if raw_results else []
                 
@@ -246,7 +262,6 @@ async def chat_endpoint(request: ChatRequest):
                     # --- MULTI-TENANT SEARCH (Fallback) ---
                     final_products = search_products("Best seller", top_k=4, namespace=client_id)
                 
-                # Note: We append the friendly reply (which now contains the "Why" and "What" recommendation)
                 return ChatResponse(
                     text_bubbles=[friendly_reply],
                     products=final_products,

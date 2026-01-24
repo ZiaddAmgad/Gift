@@ -5,10 +5,10 @@ import time
 import argparse
 
 # HOW TO RUN:
-# python scripts/scrape_all.py --client_id "koay" --url "https://koaysilver.com/products.json"
+# python scripts/scrape_all.py --client_id "artsy" --url "https://artsysilver.co/products.json"
 
 def scrape_shopify(client_id, base_url):
-    # Dynamic Output Path: data/koay.json
+    # Dynamic Output Path: data/artsy.json
     script_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.dirname(os.path.dirname(script_dir)) # Up 2 levels to Gift/
     
@@ -68,7 +68,7 @@ def scrape_shopify(client_id, base_url):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--client_id", required=True, help="Unique ID for the client (e.g., 'fortuna', 'koay')")
+    parser.add_argument("--client_id", required=True, help="Unique ID for the client (e.g., 'fortuna', 'artsy')")
     parser.add_argument("--url", required=True, help="Full link to products.json")
     args = parser.parse_args()
     
