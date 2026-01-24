@@ -40,14 +40,14 @@ export const useChat = () => {
   const [allowImage, setAllowImage] = useState(false);
   const [chatEnded, setChatEnded] = useState(false);
   
-  const [clientId, setClientId] = useState('koay'); 
+  const [clientId, setClientId] = useState('artsy'); 
 
   // 1. CAPTURE CLIENT ID & LOAD HISTORY
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const idFromUrl = params.get('client_id');
-      const currentClient = idFromUrl || 'koay';
+      const currentClient = idFromUrl || 'artsy';
       setClientId(currentClient);
 
       const sessionKey = `chat_session_${currentClient}`;

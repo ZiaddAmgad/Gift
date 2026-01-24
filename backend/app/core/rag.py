@@ -57,6 +57,7 @@ def search_products(query_text: str, top_k: int = 5, namespace: str = "") -> Lis
                 "description": meta.get("description", ""),
                 "style": meta.get("style", ""),
                 "image_url": meta.get("image_url", ""),
+                "handle": meta.get("handle", ""),
                 "score": match['score']
             }
             products.append(product)
