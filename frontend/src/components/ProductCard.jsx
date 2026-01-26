@@ -13,13 +13,9 @@ const ProductCard = ({ product, theme }) => {
   };
 
   // 2. GET THE HANDLE
-  // Priority A: The correct handle saved in Pinecone (metadata)
-  // Priority B: Generate one from title (Emergency backup)
   const handle = product.handle ? product.handle : generateHandle(product.title || "");
   
   // 3. BUILD THE URL DYNAMICALLY
-  // We do NOT use product.product_url here because we want to ensure
-  // it uses the correct domain from themes.js
   const baseUrl = theme?.storeUrl || "https://artsysilver.co"; 
   const rawUrl = `${baseUrl}/products/${handle}`;
 
@@ -34,7 +30,7 @@ const ProductCard = ({ product, theme }) => {
   return (
     <a 
       href={linkUrl} 
-      target="_blank" 
+      target="_self"
       rel="noopener noreferrer"
       className="block bg-white rounded-lg shadow-md overflow-hidden border border-gray-100 mb-4 transition-transform hover:scale-[1.02] hover:shadow-lg no-underline group"
     >
