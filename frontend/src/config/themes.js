@@ -23,14 +23,6 @@ export const themes = {
     storeUrl: 'https://marlysilver.com',
     bgImage: '/marly_demo.jpg' // Save screenshot as public/marly_demo.jpg
   },
-  zoma: {
-    primary: '#000000',
-    hover: '#333333', // Keeping it black to match their buttons
-    title: 'Zoma Assistant',
-    subtitle: 'Silver Specialist',
-    storeUrl: 'https://zomasilver.com',
-    bgImage: '/zoma_demo.jpg' // Save screenshot as public/zoma_demo.jpg
-  },
   taba: {
     primary: '#E9967A', // Salmon Pink to match their header/buttons
     hover: '#d0856d',
@@ -99,6 +91,38 @@ export const themes = {
     subtitle: 'Jewelry Design',
     storeUrl: 'https://amrmoussajewelleryeg.com', // Add URL when confirmed
     bgImage: '/amr_demo.jpg'
+  },
+  almaan: {
+    primary: '#111111', // Black to match their primary buttons/logo
+    hover: '#333333',
+    title: 'Alma Stylist',
+    subtitle: 'Jewelry Concierge',
+    storeUrl: 'https://almaandco.net',
+    bgImage: '/almaan_demo.jpg' // Save screenshot as public/almaan_demo.jpg
+  },
+  arly: {
+    primary: '#F48FB1', // Soft Baby Pink matching their buttons/footer
+    hover: '#F06292',   // Slightly darker pink for hover
+    title: 'Pearly Stylist',
+    subtitle: 'Jewelry Concierge',
+    storeUrl: 'https://www.pearlyeg.com',
+    bgImage: '/arly_demo.jpg' // Save screenshot as public/arly_demo.jpg
+  },
+  aure: {
+    primary: '#000000', // Pure Black to match their minimalist buttons
+    hover: '#333333',
+    title: 'Aurelin Stylist',
+    subtitle: 'Jewelry Concierge',
+    storeUrl: 'https://www.aurelineg.com',
+    bgImage: '/aure_demo.jpg' // Save screenshot as public/aure_demo.jpg
+  },
+  dabu: {
+    primary: '#4A0E0E', // Deep Burgundy from their footer/header
+    hover: '#661414',
+    title: 'Dabu Stylist',
+    subtitle: 'Jewelry Concierge',
+    storeUrl: 'https://dabujewels.com',
+    bgImage: '/dabu_demo.jpg' // Save screenshot as public/dabu_demo.jpg
   },
 
   // --- FALLBACK ---

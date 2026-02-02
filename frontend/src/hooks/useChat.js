@@ -40,6 +40,9 @@ export const useChat = () => {
   const [allowImage, setAllowImage] = useState(false);
   const [chatEnded, setChatEnded] = useState(false);
   
+  // NEW: Cache for Try-On Images { productId: imageUrl }
+  const [tryOnCache, setTryOnCache] = useState({});
+
   const [clientId, setClientId] = useState('artsy'); 
 
   // 1. CAPTURE CLIENT ID & LOAD HISTORY
@@ -70,6 +73,10 @@ export const useChat = () => {
             // RESTORE FLAGS
             setAllowImage(saved.allowImage === true);
             setChatEnded(saved.chatEnded === true);
+            // RESTORE CACHE
+            if (saved.tryOnCache) {
+              setTryOnCache(saved.tryOnCache);
+            }
           } else {
             localStorage.removeItem(historyKey);
           }
@@ -82,18 +89,27 @@ export const useChat = () => {
 
   // 2. SAVE HISTORY (With Client Key)
   useEffect(() => {
-    // Save if we have messages OR if flags changed
-    if (messages.length > 1 || allowImage || chatEnded) {
+    // Save if we have messages OR if flags changed OR if cache changed
+    if (messages.length > 1 || allowImage || chatEnded || Object.keys(tryOnCache).length > 0) {
       const historyKey = `chat_history_${clientId}`;
       const payload = JSON.stringify({
         timestamp: Date.now(),
         data: messages,
         allowImage: allowImage,
-        chatEnded: chatEnded
+        chatEnded: chatEnded,
+        tryOnCache: tryOnCache // Save Cache
       });
       localStorage.setItem(historyKey, payload);
     }
-  }, [messages, clientId, allowImage, chatEnded]); 
+  }, [messages, clientId, allowImage, chatEnded, tryOnCache]); 
+
+  // NEW: Helper to update cache
+  const addTryOnImage = useCallback((productId, imageUrl) => {
+    setTryOnCache(prev => ({
+      ...prev,
+      [productId]: imageUrl
+    }));
+  }, []);
 
   const sendMessage = useCallback(async (text, imageFile = null) => {
     if ((!text || !text.trim()) && !imageFile) return;
@@ -158,8 +174,6 @@ export const useChat = () => {
       if (data.text_bubbles && Array.isArray(data.text_bubbles)) {
         for (let i = 0; i < data.text_bubbles.length; i++) {
           const bubbleText = data.text_bubbles[i];
-          
-          // --- FIX: Skip empty bubbles ---
           if (!bubbleText || bubbleText.trim() === "") continue;
 
           setMessages(prev => [...prev, { type: 'bot', text: bubbleText }]);
@@ -191,7 +205,7 @@ export const useChat = () => {
     }
   }, [messages, clientId]); 
 
-  return { messages, sendMessage, loading, allowImage, chatEnded };
+  return { messages, sendMessage, loading, allowImage, chatEnded, tryOnCache, addTryOnImage };
 };
 
 export default useChat;

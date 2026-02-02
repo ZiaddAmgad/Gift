@@ -1,9 +1,20 @@
 import os
 import json
-import google.generativeai as genai
+import base64
+import io
+import asyncio
+import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, validator
 from typing import List, Optional, Dict, Any
+from PIL import Image
+
+# NEW SDK IMPORTS
+from google import genai
+from google.genai import types
+
+# OLD SDK (for text chat only)
+import google.generativeai as genai_legacy
 
 from app.core.rag import search_products
 
@@ -33,7 +44,14 @@ class Message(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[Message]
-    client_id: Optional[str] = "artsy" # Default fallback
+    client_id: Optional[str] = "artsy" 
+
+# --- NEW MODEL FOR TRY-ON ---
+class TryOnRequest(BaseModel):
+    user_image: str          # Base64 string
+    product_image_url: str
+    product_title: Optional[str] = "Jewelry" # <--- ADD THIS
+    client_id: Optional[str] = "artsy"
 
 class ChatResponse(BaseModel):
     text_bubbles: List[str]
@@ -87,7 +105,7 @@ You are an expert Jewelry Stylist.
 }
 """
 
-# --- 2. TEXT SYSTEM PROMPT ---
+# --- 2. TEXT SYSTEM PROMPT (UPDATED FOR 3 PRODUCTS) ---
 SYSTEM_PROMPT = """
 You are a warm, expert Jewelry Concierge.
 Your Goal: Help the user find a gift using a specific conversation flow.
@@ -128,11 +146,11 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
    - Use the definitions below.
 8. **Final Recommendations (The End):**
    - If Recipient + Occasion + Material + Style are known -> SEARCH.
-   - Return **4 products** immediately.
+   - Return **3 products** immediately.
    - **TEXT REPLY RULE:**
      - Write exactly 2 sentences.
      - Sentence 1: Briefly summarize the chosen style/vibe (e.g. "Since she loves [Style] looks...").
-     - Sentence 2: "Based on that, I recommend these 4 pieces." (Or a similar variation).
+     - Sentence 2: "Based on that, I recommend these 3 pieces." (Or a similar variation).
    - **CRITICAL:** Set "chat_ended": true.
 
 --- STYLE DEFINITIONS ---
@@ -186,10 +204,161 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
         "material_tags": "...",
         "style_tags": "...",
         "gemstone_tags": "...",
-        "product_count": 4 
+        "product_count": 3 
     }
 }
 """
+
+
+def build_try_on_prompt(product_title: str):
+    """
+    Constructs a highly specific prompt based on the jewelry type.
+    """
+    p_lower = product_title.lower()
+    
+    # 1. DEFAULT SETTINGS
+    framing = "Close-up portrait focusing on the relevant body part."
+    placement = "Worn naturally."
+    removal = "Ensure the skin area is clean before applying the jewelry."
+    
+    # 2. DYNAMIC LOGIC
+    if any(x in p_lower for x in ['earring', 'hoop', 'ear', 'stud']) and 'set' not in p_lower:
+        j_type = "EARRINGS"
+        framing = "Extreme close-up 'Side Profile' portrait focusing strictly on the ear, jawline, and neck. Crop tight to the head."
+        placement = "The earrings must hang naturally from the earlobe, obeying gravity."
+        removal = "REMOVE any existing earrings the user is wearing. Replace them entirely with the Product. The earlobe must look clean."
+
+    elif any(x in p_lower for x in ['necklace', 'chain', 'choker', 'pendant']) and 'set' not in p_lower:
+        j_type = "NECKLACE"
+        framing = "Elegant 'Bust Portrait' from the chest up to the nose. Focus on the clavicle and neck area."
+        placement = "Draped realistically over the neck/clavicle. If wearing a high collar, place it over the fabric. If bare skin, place it on skin."
+        removal = "REMOVE any existing necklaces. The neck area should feature ONLY this specific Product."
+
+    elif any(x in p_lower for x in ['ring', 'band']) and 'set' not in p_lower:
+        j_type = "RING"
+        framing = "Macro 'Hand Detail' shot. Focus strictly on the fingers and hand. Blur the background/body."
+        
+        # Check for specific fingers
+        if 'thumb' in p_lower:
+            finger_target = "Thumb"
+        elif 'pinky' in p_lower:
+            finger_target = "Pinky finger"
+        elif 'index' in p_lower:
+            finger_target = "Index finger"
+        else:
+            finger_target = "Ring finger or Middle finger"
+            
+        placement = f"Fitted perfectly on the {finger_target}."
+        removal = "REMOVE any existing rings on that hand. The fingers should be bare except for this Product."
+
+    elif any(x in p_lower for x in ['bracelet', 'bangle', 'wrist']) and 'set' not in p_lower:
+        j_type = "BRACELET/BANGLE"
+        framing = "Macro 'Wrist and Forearm' shot. The hand can be resting on a lap, holding a bag, or near the face."
+        placement = "Circling the wrist naturally with correct perspective and shadow."
+        removal = "REMOVE any existing wristwatches or bracelets. The wrist must be clear."
+
+    elif any(x in p_lower for x in ['anklet', 'ankle']):
+        j_type = "ANKLET"
+        framing = "Macro 'Ankle and Foot' detail shot. Focus strictly on the lower leg, ankle bone, and foot. Crop out the upper body."
+        placement = "Wrapped naturally around the ankle bone. It should sit comfortably on the skin above the foot."
+        removal = "REMOVE any existing anklets, socks, or ankle chains. The skin around the ankle must be bare."
+
+    elif 'handchain' in p_lower or 'hand chain' in p_lower:
+        j_type = "HANDCHAIN"
+        framing = "Top-down 'Back of Hand' detail shot."
+        placement = "Draped elegantly across the back of the hand, connecting the wrist to the middle finger."
+        removal = "Remove existing rings or bracelets to highlight the handchain structure."
+
+    elif 'set' in p_lower:
+        j_type = "JEWELRY SET"
+        framing = (
+            "Multi-Point MACRO SHOT. Crop strictly to the Head, Neck, and Hands. "
+            "IGNORE the waist, legs, and background. "
+            "If the set includes rings/bracelets, bring the hand into the frame near the face/neck. "
+            "Fill 80% of the image frame with the User's skin/clothing where the jewelry sits."
+        )
+        placement = (
+            "Identify components (Necklace, Ring, etc.) and place them on their respective body parts. "
+            "Ensure ALL pieces are visible in this single zoomed-in frame."
+        )
+        removal = "Remove existing jewelry from the neck, ears, and hands."
+    
+    else:
+        j_type = "JEWELRY" # Fallback
+
+    # 3. CONSTRUCT THE MASTER PROMPT (DYNAMIC)
+    return f"""
+    You are a high-end jewelry retoucher and photographer.
+    
+    YOUR TASK:
+    Composite the Product ({j_type}) onto the User's photo to create a photorealistic catalog image.
+
+    CRITICAL INSTRUCTIONS:
+    1. FRAMING: {framing}
+    2. REMOVAL: {removal}
+    3. PLACEMENT: {placement}
+    4. PRESERVE IDENTITY: Keep the User's exact skin tone, clothing texture, hair color, and lighting environment.
+    5. LIGHTING: Match the reflection on the {j_type} to the light source in the User's photo.
+    6. STYLE: Shallow depth of field (Bokeh). The jewelry must be the sharpest part of the image.
+    
+    Output a high-resolution, photorealistic image.
+    """
+
+# --- NEW TRY-ON ENDPOINT WITH CORRECT SDK ---
+@router.post("/try-on")
+async def try_on_endpoint(request: TryOnRequest):
+    try:
+        client_id = request.client_id or "artsy"
+        env_key_name = f"GOOGLE_API_KEY_{client_id.upper()}"
+        client_api_key = os.getenv(env_key_name) or os.getenv("GOOGLE_API_KEY")
+
+        # Create new SDK client
+        client = genai.Client(api_key=client_api_key)
+
+        # 1. Download product image
+        async with httpx.AsyncClient() as http_client:
+            product_response = await http_client.get(request.product_image_url)
+            product_response.raise_for_status()
+            product_image_data = product_response.content
+
+        # 2. Decode user image from base64
+        user_image_b64 = request.user_image
+        if "base64," in user_image_b64:
+            user_image_b64 = user_image_b64.split("base64,")[1]
+        user_image_data = base64.b64decode(user_image_b64)
+
+        # 3. Convert to PIL Images
+        user_image = Image.open(io.BytesIO(user_image_data))
+        product_image = Image.open(io.BytesIO(product_image_data))
+
+        # 4. Create prompt
+        prompt = build_try_on_prompt(request.product_title)
+
+        # 5. Generate image using NEW SDK
+        def _generate():
+            return client.models.generate_content(
+                model="gemini-2.5-flash-image",
+                contents=[prompt, user_image, product_image],
+            )
+
+        response = await asyncio.to_thread(_generate)
+
+        # 6. Extract generated image
+        for part in response.parts:
+            if part.inline_data is not None:
+                image_data = part.inline_data.data
+                b64 = base64.b64encode(image_data).decode("utf-8")
+                mime = getattr(part.inline_data, "mime_type", "image/png")
+                return {"image_url": f"data:{mime};base64,{b64}"}
+
+        raise HTTPException(status_code=500, detail="No image was generated")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Try-On Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/message", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
@@ -199,10 +368,11 @@ async def chat_endpoint(request: ChatRequest):
     env_key_name = f"GOOGLE_API_KEY_{client_id.upper()}"
     client_api_key = os.getenv(env_key_name) or os.getenv("GOOGLE_API_KEY")
     
-    genai.configure(api_key=client_api_key)
+    # Use LEGACY SDK for text chat (still works fine)
+    genai_legacy.configure(api_key=client_api_key)
     
-    text_model = genai.GenerativeModel('models/gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
-    vision_model = genai.GenerativeModel('models/gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+    text_model = genai_legacy.GenerativeModel('models/gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+    vision_model = genai_legacy.GenerativeModel('models/gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
 
     try:
         last_msg = request.messages[-1]
@@ -255,12 +425,14 @@ async def chat_endpoint(request: ChatRequest):
                 
                 # 4. Search
                 raw_results = search_products(query_text=search_query_tags, top_k=6, namespace=client_id)
-                final_products = raw_results[:4] if raw_results else []
+                # --- CHANGE: Limit to 3 products ---
+                final_products = raw_results[:3] if raw_results else []
                 
                 if not final_products:
                     friendly_reply += " I looked through our collection and these popular pieces seem closest to that style."
                     # --- MULTI-TENANT SEARCH (Fallback) ---
-                    final_products = search_products("Best seller", top_k=4, namespace=client_id)
+                    # --- CHANGE: Limit to 3 products ---
+                    final_products = search_products("Best seller", top_k=3, namespace=client_id)
                 
                 return ChatResponse(
                     text_bubbles=[friendly_reply],
@@ -309,18 +481,20 @@ async def chat_endpoint(request: ChatRequest):
                 ]
                 
                 query = " ".join([p for p in query_parts if p]).strip()
-                count = params.get("product_count", 4)
+                count = params.get("product_count", 3) # Default to 3
                 print(f"🔎 Text Search Query: {query} (Requesting: {count})")
                 
                 # --- MULTI-TENANT SEARCH (Text) ---
                 raw_results = search_products(query_text=query, top_k=6, namespace=client_id)
                 
                 if raw_results:
-                    products = raw_results[:4]
+                    # --- CHANGE: Limit to 3 products ---
+                    products = raw_results[:3]
                 else:
                     bubbles.append("I couldn't find an exact match, but here are our most popular pieces.")
                     # --- MULTI-TENANT SEARCH (Fallback) ---
-                    products = search_products(query_text="Best seller", top_k=4, namespace=client_id)
+                    # --- CHANGE: Limit to 3 products ---
+                    products = search_products(query_text="Best seller", top_k=3, namespace=client_id)
 
             return ChatResponse(
                 text_bubbles=bubbles, 

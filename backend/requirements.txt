@@ -4,5 +4,7 @@ python-multipart
 python-dotenv
 requests
 google-generativeai
+google-genai
+Pillow
 pinecone>=5.0.0
 pydantic
