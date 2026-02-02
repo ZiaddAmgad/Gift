@@ -316,7 +316,11 @@ async def try_on_endpoint(request: TryOnRequest):
         client = genai.Client(api_key=client_api_key)
 
         # 1. Download product image
-        async with httpx.AsyncClient() as http_client:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        async with httpx.AsyncClient(headers=headers, follow_redirects=True) as http_client:
             product_response = await http_client.get(request.product_image_url)
             product_response.raise_for_status()
             product_image_data = product_response.content
