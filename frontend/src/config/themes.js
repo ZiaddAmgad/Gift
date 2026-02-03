@@ -45,12 +45,13 @@ export const themes = {
 
   // 3. ELAF JEWELRY (Minimalist Grey)
   elaf: {
-    primary: '#333333', // Charcoal Grey to match their buttons
+    primary: '#333333', 
     hover: '#555555',
     title: 'Elaf Assistant',
     subtitle: 'Timeless Beauty',
     storeUrl: 'https://elafjewelry.com',
-    bgImage: '/elaf_demo.jpg'
+    bgImage: '/elaf_demo.jpg',
+    logoUrl: '/elaf_logo.png' 
   },
 
   // 4. GLAMOUR (Green Branding)

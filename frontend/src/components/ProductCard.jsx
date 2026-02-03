@@ -1,6 +1,7 @@
 import React from 'react';
 
-const ProductCard = ({ product, theme, onTryOn, hasUserPhoto }) => {
+// NEW: Added 'isCached' to props
+const ProductCard = ({ product, theme, onTryOn, hasUserPhoto, isCached }) => {
   
   // 1. Fallback Handle Generator
   const generateHandle = (title) => {
@@ -66,9 +67,20 @@ const ProductCard = ({ product, theme, onTryOn, hasUserPhoto }) => {
         {hasUserPhoto && (
           <button 
             onClick={() => onTryOn(product)}
-            className="flex-1 bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 bg-[length:200%_auto] hover:bg-right transition-all duration-500 text-white py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1 shadow-sm"
+            // UPDATED: Dynamic styling based on isCached state
+            className={`flex-1 text-white py-2.5 rounded-lg text-xs font-bold uppercase tracking-wide flex items-center justify-center gap-1 shadow-sm transition-all duration-500 ${
+              isCached 
+                ? "bg-gray-800 hover:bg-black border border-gray-600" // "View Preview" Style
+                : "bg-gradient-to-r from-yellow-600 via-yellow-500 to-yellow-600 bg-[length:200%_auto] hover:bg-right" // "Try On" Style
+            }`}
           >
-            <span>✨</span> Try On
+            {isCached ? (
+               // CACHED STATE
+               <> View Preview</>
+            ) : (
+               // NEW STATE
+               <><span>✨</span> Try On</>
+            )}
           </button>
         )}
       </div>

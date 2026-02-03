@@ -286,7 +286,8 @@ def build_try_on_prompt(product_title: str):
     else:
         j_type = "JEWELRY" # Fallback
 
-    # 3. CONSTRUCT THE MASTER PROMPT (DYNAMIC)
+    # 3. CONSTRUCT THE MASTER PROMPT
+    # Added Instruction #7 specifically for scaling
     return f"""
     You are a high-end jewelry retoucher and photographer.
     
@@ -300,6 +301,7 @@ def build_try_on_prompt(product_title: str):
     4. PRESERVE IDENTITY: Keep the User's exact skin tone, clothing texture, hair color, and lighting environment.
     5. LIGHTING: Match the reflection on the {j_type} to the light source in the User's photo.
     6. STYLE: Shallow depth of field (Bokeh). The jewelry must be the sharpest part of the image.
+    7. REALISTIC SCALING: The Input Product Image is a "Macro/Zoomed-In" reference. You MUST shrink/scale it down to fit the User's anatomy realistically. It should look like fine jewelry, not oversized costume jewelry.
     
     Output a high-resolution, photorealistic image.
     """

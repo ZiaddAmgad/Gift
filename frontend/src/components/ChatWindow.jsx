@@ -4,7 +4,7 @@ import ProductCard from './ProductCard';
 import TryOnModal from './TryOnModal'; 
 
 const ChatWindow = ({ isOpen, onClose, theme }) => {
-  // NEW: Get cache state and setter from useChat
+  // Get cache state and setter from useChat
   const { messages, sendMessage, loading, allowImage, chatEnded, tryOnCache, addTryOnImage } = useChat();
   
   const [input, setInput] = useState('');
@@ -74,6 +74,8 @@ const ChatWindow = ({ isOpen, onClose, theme }) => {
                     product={product} 
                     theme={theme}
                     hasUserPhoto={!!userPhoto}
+                    // NEW: Pass cache status to change button style
+                    isCached={!!tryOnCache[product.id]}
                     onTryOn={(prod) => setTryOnProduct(prod)}
                   />
                 ))}
@@ -124,9 +126,9 @@ const ChatWindow = ({ isOpen, onClose, theme }) => {
           userImage={userPhoto} 
           product={tryOnProduct} 
           onClose={() => setTryOnProduct(null)} 
-          // PASS CACHING PROPS
           cachedResult={tryOnCache[tryOnProduct.id]} // Look up by ID
           onSuccess={(url) => addTryOnImage(tryOnProduct.id, url)} // Save on success
+          theme={theme} // NEW: Pass theme for Logo/Watermark
         />
       )}
 
