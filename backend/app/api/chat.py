@@ -207,6 +207,78 @@ LANGUAGE: Strictly English. No Franco-Arabic. No Emojis.
 """
 
 
+# --- 2a. MODULAR TEXT PROMPT COMPONENTS ---
+_STYLE_MARKER = "--- STYLE DEFINITIONS ---"
+_TAG_MARKER = "--- TAG MAPPING LOGIC ---"
+_OUTPUT_MARKER = "--- OUTPUT FORMAT (JSON) ---"
+
+_idx_style = SYSTEM_PROMPT.index(_STYLE_MARKER)
+_idx_tag = SYSTEM_PROMPT.index(_TAG_MARKER)
+_idx_output = SYSTEM_PROMPT.index(_OUTPUT_MARKER)
+
+_core_prefix = SYSTEM_PROMPT[:_idx_style]
+_style_and_beyond = SYSTEM_PROMPT[_idx_style:]
+_style_section = SYSTEM_PROMPT[_idx_style:_idx_tag]
+_tag_and_output = SYSTEM_PROMPT[_idx_tag:]
+_mapping_section = SYSTEM_PROMPT[_idx_tag:_idx_output]
+_output_section = SYSTEM_PROMPT[_idx_output:]
+
+_idx_recipient = _mapping_section.index("**A. Recipient Mapping:**")
+_idx_occasion = _mapping_section.index("**B. Occasion Mapping:**")
+_idx_material = _mapping_section.index("**C. Material Mapping:**")
+_idx_styleopts = _mapping_section.index("**D. Style Options:**")
+
+_tag_header = _mapping_section[:_idx_recipient]
+_recipient_and_occasion = _mapping_section[_idx_recipient:_idx_material]
+_material_block = _mapping_section[_idx_material:_idx_styleopts]
+_styleopts_block = _mapping_section[_idx_styleopts:]
+
+# PROMPT_CORE: Persona, Language Rules, Conversation Flow, and JSON Output Format
+PROMPT_CORE = _core_prefix + _output_section
+
+# Stage 1: TAG MAPPING LOGIC for Recipient and Occasion
+PROMPT_STAGE_RECIPIENT = _tag_header + _recipient_and_occasion
+
+# Stage 2: TAG MAPPING LOGIC for Material
+PROMPT_STAGE_MATERIAL = _material_block
+
+# Stage 3: STYLE DEFINITIONS and Style Options mapping
+PROMPT_STAGE_STYLE = _style_section + _styleopts_block
+
+
+def get_system_prompt(messages: List[Message]) -> str:
+    """
+    Dynamically select the system prompt components based on the last assistant message.
+    Analyzes what the assistant just asked to determine the current conversation stage.
+    """
+    # Find the last assistant message by iterating backwards
+    last_assistant_text = ""
+    for msg in reversed(messages):
+        if msg.role in ["assistant", "model"]:
+            last_assistant_text = (msg.content or "").lower()
+            break
+    
+    # If no assistant message found, default to start stage
+    if not last_assistant_text:
+        return PROMPT_CORE + PROMPT_STAGE_RECIPIENT
+    
+    # Case A: Style Stage - Check if last assistant message contains style menu indicators
+    if "(a) simple" in last_assistant_text or "style menu" in last_assistant_text:
+        return PROMPT_CORE + PROMPT_STAGE_STYLE
+    
+    # Case B: Material Stage - Check if last assistant message asks about Gold AND Silver
+    if "gold" in last_assistant_text and "silver" in last_assistant_text:
+        return PROMPT_CORE + PROMPT_STAGE_MATERIAL
+    
+    # Case C: Search/End Stage - Check if assistant is recommending or ending chat
+    if "recommend" in last_assistant_text or "chat_ended" in last_assistant_text:
+        # Return FULL original prompt (all tags needed for search query)
+        return SYSTEM_PROMPT
+    
+    # Case D: Default/Start - All other cases (e.g., asking "Who is this for?")
+    return PROMPT_CORE + PROMPT_STAGE_RECIPIENT
+
+
 def build_try_on_prompt(product_title: str):
     """
     Constructs a highly specific prompt based on the jewelry type.
@@ -468,7 +540,8 @@ async def chat_endpoint(request: ChatRequest):
                 content = msg.content if msg.content else "[User sent an Image]"
                 conversation_text += f"{role_label}: {content}\n"
 
-            prompt = f"{SYSTEM_PROMPT}\n\n--- CONVERSATION HISTORY ---\n{conversation_text}\n\n--- JSON RESPONSE ---"
+            dynamic_system_prompt = get_system_prompt(request.messages)
+            prompt = f"{dynamic_system_prompt}\n\n--- CONVERSATION HISTORY ---\n{conversation_text}\n\n--- JSON RESPONSE ---"
             # Text-only call (new SDK)
             def _call_text():
                 return client.models.generate_content(

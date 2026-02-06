@@ -119,9 +119,13 @@ def ingest_client(client_id):
             try:
                 time.sleep(0.5)
                 # Use new google.genai embeddings API
+                # Gemini embedding model: models/gemini-embedding-001
+                # Output 768 dimensions to match Pinecone index (created with dimension=768)
+                from google.genai import types as genai_types
                 result = client.models.embed_content(
-                    model="models/text-embedding-004",
+                    model="models/gemini-embedding-001",
                     contents=text_to_embed,
+                    config=genai_types.EmbedContentConfig(output_dimensionality=768),
                 )
                 # Single input -> first embedding vector
                 embedding = result.embeddings[0].values

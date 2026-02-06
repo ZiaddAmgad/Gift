@@ -30,9 +30,13 @@ def search_products(query_text: str, top_k: int = 5, namespace: str = "") -> Lis
     
     try:
         # 1. Generate Embedding using new google.genai
+        # Use Gemini embedding model: models/gemini-embedding-001
+        # Output 768 dimensions to match Pinecone index (created with dimension=768)
+        from google.genai import types as genai_types
         result = genai_client.models.embed_content(
-            model="models/text-embedding-004",
+            model="models/gemini-embedding-001",
             contents=query_text,
+            config=genai_types.EmbedContentConfig(output_dimensionality=768),
         )
         query_vector = result.embeddings[0].values
 
