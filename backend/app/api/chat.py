@@ -9,12 +9,9 @@ from pydantic import BaseModel, validator
 from typing import List, Optional, Dict, Any
 from PIL import Image
 
-# NEW SDK IMPORTS
+# NEW SDK IMPORTS (google.genai)
 from google import genai
 from google.genai import types
-
-# OLD SDK (for text chat only)
-import google.generativeai as genai_legacy
 
 from app.core.rag import search_products
 
@@ -374,11 +371,10 @@ async def chat_endpoint(request: ChatRequest):
     env_key_name = f"GOOGLE_API_KEY_{client_id.upper()}"
     client_api_key = os.getenv(env_key_name) or os.getenv("GOOGLE_API_KEY")
     
-    # Use LEGACY SDK for text chat (still works fine)
-    genai_legacy.configure(api_key=client_api_key)
-    
-    text_model = genai_legacy.GenerativeModel('models/gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
-    vision_model = genai_legacy.GenerativeModel('models/gemini-2.5-flash', generation_config={"response_mime_type": "application/json"})
+    # New google.genai client + configs (text + vision)
+    client = genai.Client(api_key=client_api_key)
+    text_config = types.GenerateContentConfig(response_mime_type="application/json")
+    vision_config = types.GenerateContentConfig(response_mime_type="application/json")
 
     try:
         last_msg = request.messages[-1]
@@ -390,8 +386,7 @@ async def chat_endpoint(request: ChatRequest):
             image_data = last_msg.image
             if "base64," in image_data:
                 image_data = image_data.split("base64,")[1]
-            
-            image_part = {"mime_type": "image/jpeg", "data": image_data}
+            image_bytes = base64.b64decode(image_data)
 
             # 1. Prepare Text History for Context
             history_text = "--- CHAT HISTORY ---\n"
@@ -399,8 +394,21 @@ async def chat_endpoint(request: ChatRequest):
                 if m.role == 'user' and not m.image:
                     history_text += f"User: {m.content}\n"
             
-            # 2. Multimodal Call: Prompt + History + Image
-            response = await vision_model.generate_content_async([VISION_PROMPT, history_text, image_part])
+            # 2. Multimodal Call: Prompt + History + Image (new SDK)
+            vision_contents = [
+                VISION_PROMPT,
+                history_text,
+                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+            ]
+
+            def _call_vision():
+                return client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=vision_contents,
+                    config=vision_config,
+                )
+
+            response = await asyncio.to_thread(_call_vision)
             
             try:
                 vision_data = json.loads(response.text)
@@ -430,7 +438,7 @@ async def chat_endpoint(request: ChatRequest):
                 print(f"🔎 Hybrid Search Query: {search_query_tags}")
                 
                 # 4. Search
-                raw_results = search_products(query_text=search_query_tags, top_k=6, namespace=client_id)
+                raw_results = search_products(query_text=search_query_tags, top_k=3, namespace=client_id)
                 # --- CHANGE: Limit to 3 products ---
                 final_products = raw_results[:3] if raw_results else []
                 
@@ -461,7 +469,15 @@ async def chat_endpoint(request: ChatRequest):
                 conversation_text += f"{role_label}: {content}\n"
 
             prompt = f"{SYSTEM_PROMPT}\n\n--- CONVERSATION HISTORY ---\n{conversation_text}\n\n--- JSON RESPONSE ---"
-            response = await text_model.generate_content_async(prompt)
+            # Text-only call (new SDK)
+            def _call_text():
+                return client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=[prompt],
+                    config=text_config,
+                )
+
+            response = await asyncio.to_thread(_call_text)
             
             try:
                 ai_data = json.loads(response.text)
@@ -491,7 +507,7 @@ async def chat_endpoint(request: ChatRequest):
                 print(f"🔎 Text Search Query: {query} (Requesting: {count})")
                 
                 # --- MULTI-TENANT SEARCH (Text) ---
-                raw_results = search_products(query_text=query, top_k=6, namespace=client_id)
+                raw_results = search_products(query_text=query, top_k=3, namespace=client_id)
                 
                 if raw_results:
                     # --- CHANGE: Limit to 3 products ---

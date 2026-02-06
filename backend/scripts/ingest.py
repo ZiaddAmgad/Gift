@@ -4,7 +4,7 @@ import argparse
 import pandas as pd
 import unicodedata
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai  # new SDK
 from pinecone import Pinecone, ServerlessSpec
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
@@ -57,7 +57,8 @@ def ingest_client(client_id):
     if not GOOGLE_API_KEY or not PINECONE_API_KEY:
         raise ValueError("❌ Missing API Keys.")
     
-    genai.configure(api_key=GOOGLE_API_KEY)
+    # Initialize new google.genai client once
+    client = genai.Client(api_key=GOOGLE_API_KEY)
     pc = Pinecone(api_key=PINECONE_API_KEY)
 
     existing_indexes = [i.name for i in pc.list_indexes()]
@@ -117,12 +118,13 @@ def ingest_client(client_id):
         for attempt in range(3):
             try:
                 time.sleep(0.5)
-                result = genai.embed_content(
+                # Use new google.genai embeddings API
+                result = client.models.embed_content(
                     model="models/text-embedding-004",
-                    content=text_to_embed,
-                    task_type="retrieval_document"
+                    contents=text_to_embed,
                 )
-                embedding = result['embedding']
+                # Single input -> first embedding vector
+                embedding = result.embeddings[0].values
                 break 
             except: time.sleep(2)
         

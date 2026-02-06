@@ -1,7 +1,7 @@
 import os
 from typing import List, Dict, Any
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai  # new SDK
 from pinecone import Pinecone
 
 # Load environment variables
@@ -14,7 +14,8 @@ PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME", "gift-concierge-v1")
 if not GOOGLE_API_KEY or not PINECONE_API_KEY:
     print("❌ ERROR: Missing API Keys in rag.py")
 
-genai.configure(api_key=GOOGLE_API_KEY)
+# Initialize new google.genai client
+genai_client = genai.Client(api_key=GOOGLE_API_KEY)
 pc = Pinecone(api_key=PINECONE_API_KEY)
 index = pc.Index(PINECONE_INDEX_NAME)
 
@@ -28,13 +29,12 @@ def search_products(query_text: str, top_k: int = 5, namespace: str = "") -> Lis
     print(f"🔍 RAG: Searching '{query_text}' in Namespace: '{namespace}'")
     
     try:
-        # 1. Generate Embedding
-        result = genai.embed_content(
+        # 1. Generate Embedding using new google.genai
+        result = genai_client.models.embed_content(
             model="models/text-embedding-004",
-            content=query_text,
-            task_type="retrieval_query"
+            contents=query_text,
         )
-        query_vector = result['embedding']
+        query_vector = result.embeddings[0].values
 
         # 2. Search Pinecone (With Namespace)
         # If namespace is "", Pinecone searches the default namespace.

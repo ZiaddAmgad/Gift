@@ -6,7 +6,7 @@ import time
 import requests
 import argparse
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai  # new SDK
 from PIL import Image
 from io import BytesIO
 
@@ -26,13 +26,13 @@ def analyze_product_multimodal(image_url, title, description):
     """
     Multimodal Analysis: Uses Image + Title + Description to extract attributes.
     """
-    if not image_url or not GOOGLE_API_KEY: return None
+    if not image_url or not GOOGLE_API_KEY:
+        return None
     
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            genai.configure(api_key=GOOGLE_API_KEY)
-            model = genai.GenerativeModel('models/gemini-2.5-flash')
+            client = genai.Client(api_key=GOOGLE_API_KEY)
             
             # 1. Download Image
             response = requests.get(image_url, timeout=10)
@@ -68,8 +68,11 @@ def analyze_product_multimodal(image_url, title, description):
             }}
             """
             
-            # 3. Send Both to Gemini
-            res = model.generate_content([prompt, img_data])
+            # 3. Send Both to Gemini (new SDK)
+            res = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=[prompt, img_data],
+            )
             text = res.text.replace('```json', '').replace('```', '').strip()
             return json.loads(text)
 
