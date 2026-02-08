@@ -104,7 +104,7 @@ def analyze_product_multimodal(image_url, title, description):
             
             # 3. Send to Gemini
             res = client.models.generate_content(
-                model="gemini-2.5-flash",
+                model="gemini-3-flash-preview",
                 contents=[prompt, img_data],
             )
             text = res.text.replace('```json', '').replace('```', '').strip()
