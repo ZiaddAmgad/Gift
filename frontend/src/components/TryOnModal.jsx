@@ -5,6 +5,9 @@ const TryOnModal = ({ userImage, product, onClose, cachedResult, onSuccess, them
   const [status, setStatus] = useState('loading'); 
   const [resultImage, setResultImage] = useState(null);
   const [isComparing, setIsComparing] = useState(false);
+  
+  // NEW: Track if logo loads successfully. Default to true, set to false on error.
+  const [isLogoValid, setIsLogoValid] = useState(true);
 
   useEffect(() => {
     if (cachedResult) {
@@ -64,7 +67,6 @@ const TryOnModal = ({ userImage, product, onClose, cachedResult, onSuccess, them
         >
           {status === 'loading' && (
             <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-white/90">
-               {/* Loading Spinner code... */}
                <div className="w-16 h-16 border-4 border-gray-200 border-t-yellow-500 rounded-full animate-spin"></div>
                <p className="text-sm text-gray-600 font-medium mt-4 animate-pulse">Styling your look...</p>
             </div>
@@ -86,14 +88,15 @@ const TryOnModal = ({ userImage, product, onClose, cachedResult, onSuccess, them
           {/* ORIGINAL USER PHOTO */}
           <img src={userImage} alt="Original" className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-200 ${status === 'success' && !isComparing ? 'opacity-0' : 'opacity-100'}`} />
           
-          {/* --- NEW: WATERMARK LOGO --- */}
-          {/* Only show on Success and when NOT comparing (showing the AI result) */}
-          {status === 'success' && !isComparing && theme?.logoUrl && (
+          {/* --- WATERMARK LOGO --- */}
+          {/* Logic: Only show if Success AND Not Comparing AND Logo URL exists AND Logo loaded successfully */}
+          {status === 'success' && !isComparing && theme?.logoUrl && isLogoValid && (
             <div className="absolute top-4 left-4 z-10 pointer-events-none opacity-80 mix-blend-multiply">
                <img 
                  src={theme.logoUrl} 
-                 alt="Brand Logo" 
-                 className="h-8 w-auto object-contain" // Adjust h-8 to size the logo
+                 alt="" // Empty alt to prevent text display if image breaks
+                 className="h-8 w-auto object-contain" 
+                 onError={() => setIsLogoValid(false)} // Hides the div if image fails to load
                />
             </div>
           )}
@@ -110,7 +113,6 @@ const TryOnModal = ({ userImage, product, onClose, cachedResult, onSuccess, them
         <div className="p-5 text-center bg-white border-t border-gray-100">
           <h3 className="font-bold text-gray-900 text-sm line-clamp-1">{product.title}</h3>
           
-          {/* NEW DISCLAIMER TEXT */}
           <p className="text-[10px] text-gray-400 mt-2 uppercase tracking-wide">
             Ai-generated image, size may not be accurate.
           </p>

@@ -125,7 +125,57 @@ export const themes = {
     storeUrl: 'https://dabujewels.com',
     bgImage: '/dabu_demo.jpg' // Save screenshot as public/dabu_demo.jpg
   },
-
+  // 8. DETAILER (Minimalist Black & White)
+  detailer: {
+    primary: '#000000', // Matching the strong black branding/header
+    hover: '#333333',   // Dark Charcoal for hover state
+    title: 'Detailer Stylist',
+    subtitle: 'Fine Details',
+    storeUrl: 'https://detailer-eg.com',
+    bgImage: '/detailer_demo.jpg',
+    logoUrl: '/detailer_logo.png' // Assuming you will add the logo file
+  },
+  // 9. GEN D (Vibrant Pink)
+  gend: {
+    primary: '#FF2E93', // Vibrant Hot Pink from header/banners
+    hover: '#E01A7B',   // Deep Raspberry/Darker Pink for hover
+    title: 'Gen D Stylist',
+    subtitle: 'Self Love & Jewelry',
+    storeUrl: 'https://www.generationdesigners.com/',
+    bgImage: '/gend_demo.jpg',
+    logoUrl: '/gend_logo.png'
+  },
+  // 10. HARIRI (Minimalist Black)
+  hariri: {
+    primary: '#000000', // Matches the black button borders and typography
+    hover: '#333333',   // Dark Charcoal for hover state
+    title: 'Hariri Stylist',
+    subtitle: 'Sculptural Jewelry',
+    storeUrl: 'https://www.zeinahariridesigns.store/',
+    bgImage: '/hariri_demo.jpg',
+    logoUrl: '/hariri_logo.png'
+  },
+  // 11. HARRY V (Sleek Black)
+  harry: {
+    primary: '#000000', // Pure Black to match the typography and button borders
+    hover: '#333333',   // Dark Charcoal for hover state
+    title: 'Harry V Stylist',
+    subtitle: 'Modern Elegance',
+    storeUrl: 'https://harryvjewelers.com/',
+    bgImage: '/harry_demo.jpg',
+    logoUrl: '/harry_logo.png'
+  },
+  // 12. ISLAM KHALIL (Monochrome Black)
+  khal: {
+    primary: '#000000', // Matches the "View all" button and header text
+    hover: '#333333',   // Dark Charcoal for hover state
+    title: 'Islam Khalil Stylist',
+    subtitle: 'Signature Designs',
+    storeUrl: 'https://islamkhalildesigns.com/',
+    bgImage: '/khal_demo.jpg',
+    logoUrl: '/khal_logo.png'
+  },
+  
   // --- FALLBACK ---
   default: {
     primary: '#000000',
