@@ -126,7 +126,7 @@ export const themes = {
     bgImage: '/dabu_demo.jpg' // Save screenshot as public/dabu_demo.jpg
   },
   // 8. DETAILER (Minimalist Black & White)
-  detailer: {
+  detail: {
     primary: '#000000', // Matching the strong black branding/header
     hover: '#333333',   // Dark Charcoal for hover state
     title: 'Detailer Stylist',
