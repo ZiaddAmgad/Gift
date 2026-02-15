@@ -294,61 +294,56 @@ def build_try_on_prompt(product_title: str):
     if any(x in p_lower for x in ['earring', 'hoop', 'ear', 'stud']) and 'set' not in p_lower:
         j_type = "EARRINGS"
         framing = "Extreme close-up 'Side Profile' portrait focusing strictly on the ear, jawline, and neck. Crop tight to the head."
-        placement = "The earrings must hang naturally from the earlobe, obeying gravity."
-        removal = "REMOVE any existing earrings the user is wearing. Replace them entirely with the Product. The earlobe must look clean."
+        placement = "The earrings must hang naturally from the earlobe. The size must be proportional to a standard human earlobe."
+        removal = "REMOVE any existing earrings. The earlobe must be clean before placing the new item."
 
     elif any(x in p_lower for x in ['necklace', 'chain', 'choker', 'pendant']) and 'set' not in p_lower:
         j_type = "NECKLACE"
         framing = "Elegant 'Bust Portrait' from the chest up to the nose. Focus on the clavicle and neck area."
-        placement = "Draped realistically over the neck/clavicle. If wearing a high collar, place it over the fabric. If bare skin, place it on skin."
+        placement = (
+            "Draped realistically over the neck/clavicle. "
+            "If the product is a fine chain, render it thin and delicate. "
+            "If it is a pendant, ensure it rests naturally on the skin or fabric."
+        )
         removal = "REMOVE any existing necklaces. The neck area should feature ONLY this specific Product."
 
     elif any(x in p_lower for x in ['ring', 'band']) and 'set' not in p_lower:
         j_type = "RING"
-        framing = "Macro 'Hand Detail' shot. Focus strictly on the fingers and hand. Blur the background/body."
-        
-        # Check for specific fingers
-        if 'thumb' in p_lower:
-            finger_target = "Thumb"
-        elif 'pinky' in p_lower:
-            finger_target = "Pinky finger"
-        elif 'index' in p_lower:
-            finger_target = "Index finger"
-        else:
-            finger_target = "Ring finger or Middle finger"
-            
-        placement = f"Fitted perfectly on the {finger_target}."
-        removal = "REMOVE any existing rings on that hand. The fingers should be bare except for this Product."
+        framing = "Macro 'Hand Detail' shot. Focus strictly on the fingers and hand. Blur the background."
+        placement = (
+            f"The ring MUST be visible on the Ring finger. "
+            "The band must circle the finger realistically, compressing the skin slightly to show fit. "
+            "Ensure the gemstone/design faces the camera."
+        )
+        removal = "REMOVE any existing rings on that hand. The fingers should be bare except for this new Product."
 
     elif any(x in p_lower for x in ['bracelet', 'bangle', 'wrist']) and 'set' not in p_lower:
         j_type = "BRACELET/BANGLE"
-        framing = "Macro 'Wrist and Forearm' shot. The hand can be resting on a lap, holding a bag, or near the face."
-        placement = "Circling the wrist naturally with correct perspective and shadow."
+        framing = "Macro 'Wrist and Forearm' shot. The hand can be resting on a lap or holding a bag."
+        placement = "Circling the wrist naturally. The bracelet must look like it surrounds the arm, with proper shadowing."
         removal = "REMOVE any existing wristwatches or bracelets. The wrist must be clear."
 
     elif any(x in p_lower for x in ['anklet', 'ankle']):
         j_type = "ANKLET"
-        framing = "Macro 'Ankle and Foot' detail shot. Focus strictly on the lower leg, ankle bone, and foot. Crop out the upper body."
-        placement = "Wrapped naturally around the ankle bone. It should sit comfortably on the skin above the foot."
-        removal = "REMOVE any existing anklets, socks, or ankle chains. The skin around the ankle must be bare."
+        framing = "Macro 'Ankle and Foot' detail shot. Focus strictly on the lower leg, ankle bone, and foot."
+        placement = "Wrapped naturally around the ankle bone. The chain should look delicate and rest on the skin."
+        removal = "REMOVE any existing anklets or socks."
 
     elif 'handchain' in p_lower or 'hand chain' in p_lower:
         j_type = "HANDCHAIN"
         framing = "Top-down 'Back of Hand' detail shot."
-        placement = "Draped elegantly across the back of the hand, connecting the wrist to the middle finger."
-        removal = "Remove existing rings or bracelets to highlight the handchain structure."
+        placement = "Draped elegantly across the back of the hand. The chain segments must look fine and metallic."
+        removal = "Remove existing rings or bracelets."
 
     elif 'set' in p_lower:
         j_type = "JEWELRY SET"
         framing = (
             "Multi-Point MACRO SHOT. Crop strictly to the Head, Neck, and Hands. "
-            "IGNORE the waist, legs, and background. "
-            "If the set includes rings/bracelets, bring the hand into the frame near the face/neck. "
-            "Fill 80% of the image frame with the User's skin/clothing where the jewelry sits."
+            "If the set includes rings, bring the hand into the frame near the face/neck."
         )
         placement = (
-            "Identify components (Necklace, Ring, etc.) and place them on their respective body parts. "
-            "Ensure ALL pieces are visible in this single zoomed-in frame."
+            "Identify components and place them on their respective body parts. "
+            "Ensure the Ring size is realistic compared to the Necklace."
         )
         removal = "Remove existing jewelry from the neck, ears, and hands."
     
@@ -356,21 +351,26 @@ def build_try_on_prompt(product_title: str):
         j_type = "JEWELRY" # Fallback
 
     # 3. CONSTRUCT THE MASTER PROMPT
-    # Added Instruction #7 specifically for scaling
+    # IMPROVEMENTS:
+    # - Added {product_title} directly into the prompt description.
+    # - Added "MANDATORY" instruction to force generation.
+    # - Changed "Composite" to "Photorealistic generation of User MODELING the item".
     return f"""
-    You are a high-end jewelry retoucher and photographer.
+    You are a high-end jewelry photographer.
     
     YOUR TASK:
-    Composite the Product ({j_type}) onto the User's photo to create a photorealistic catalog image.
+    Generate a photorealistic image of the User MODELING the specific product: "{product_title}" ({j_type}).
+    The User's identity (face, skin, hair) and clothing must match the provided User Reference Image exactly.
+    The Jewelry must match the provided Product Reference Image exactly.
 
     CRITICAL INSTRUCTIONS:
-    1. FRAMING: {framing}
-    2. REMOVAL: {removal}
-    3. PLACEMENT: {placement}
-    4. PRESERVE IDENTITY: Keep the User's exact skin tone, clothing texture, hair color, and lighting environment.
-    5. LIGHTING: Match the reflection on the {j_type} to the light source in the User's photo.
-    6. STYLE: Shallow depth of field (Bokeh). The jewelry must be the sharpest part of the image.
-    7. REALISTIC SCALING: The Input Product Image is a "Macro/Zoomed-In" reference. You MUST shrink/scale it down to fit the User's anatomy realistically. It should look like fine jewelry, not oversized costume jewelry.
+    1. MANDATORY VISIBILITY: The product "{product_title}" MUST be clearly visible on the user's body. Do not generate an image without the jewelry.
+    2. FRAMING: {framing}
+    3. REMOVAL: {removal}
+    4. PLACEMENT: {placement}
+    5. IDENTITY PRESERVATION: Keep the User's exact skin tone, texture, and lighting. Do not change the person.
+    6. LIGHTING: Match the reflection on the {j_type} to the light source in the User's photo.
+    7. REALISM: The item must interact with the skin (casting small shadows, slight skin compression). It should not look like a floating sticker.
     
     Output a high-resolution, photorealistic image.
     """
